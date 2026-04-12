@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name (e.g. v1.0.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
+  IMAGE_NAME: esde-emulator-provider
+  REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+
+jobs:
+  resolve-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      release_name: ${{ steps.resolve.outputs.release_name }}
+    steps:
+      - name: Resolve release metadata
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          GH_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_RELEASE_NAME: ${{ github.event.release.name }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${INPUT_RELEASE_NAME:-$(date +%Y.%m.%d)}"
+            RELEASE_NAME="${INPUT_RELEASE_NAME:-Release ${RELEASE_TAG}}"
+          else
+            RELEASE_TAG="${GH_RELEASE_TAG}"
+            RELEASE_NAME="${GH_RELEASE_NAME:-${RELEASE_TAG}}"
+          fi
+
+          echo "release_tag=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    needs: resolve-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [retroarch, ppsspp, dolphin-emu]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Dockerfile syntax
+        run: docker run --rm -i hadolint/hadolint:latest hadolint - < ./Dockerfile || true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${DOCKERHUB_USERNAME}" ] || (echo "DOCKERHUB_USERNAME missing" && exit 1)
+          [ -n "${DOCKERHUB_TOKEN}" ] || (echo "DOCKERHUB_TOKEN missing" && exit 1)
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve versions
+        id: versions
+        uses: ./.github/actions/resolve-versions
+
+      - name: Build metadata
+        id: buildargs
+        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push release tags
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          push: true
+          pull: true
+          no-cache: false
+          provenance: false
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            RETROARCH_VERSION=${{ steps.versions.outputs.retroarch_version }}
+            PPSSPP_VERSION=${{ steps.versions.outputs.ppsspp_version }}
+            DOLPHIN_VERSION=${{ steps.versions.outputs.dolphin_version }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.buildargs.outputs.build_date }}
+            org.opencontainers.image.version=${{ needs.resolve-release.outputs.release_tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ env.REPO_URL }}
+            org.opencontainers.image.url=${{ env.REPO_URL }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ needs.resolve-release.outputs.release_tag }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ needs.resolve-release.outputs.release_tag }}-${{ github.sha }}
+            ${{ matrix.target == 'retroarch' && format('{0}/{1}/{2}:latest', env.REGISTRY, env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}
+
+  create-github-release:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: [resolve-release, build-and-publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.resolve-release.outputs.release_tag }}
+          name: ${{ needs.resolve-release.outputs.release_name }}
+          body: |
+            ## Emulator Provider Sidecar Release
+
+            - Image: `${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}`
+            - Version: `${{ needs.resolve-release.outputs.release_tag }}`
+            - Built from: `${{ github.sha }}`
+
+            ### Available Tags
+
+            | Emulator | Pull Command |
+            |----------|-------------|
+            | RetroArch | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:retroarch` |
+            | PPSSPP | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:ppsspp` |
+            | Dolphin | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:dolphin-emu` |
+
+            Pinned version tags: `<target>-${{ needs.resolve-release.outputs.release_tag }}`
+          draft: false
+          prerelease: false

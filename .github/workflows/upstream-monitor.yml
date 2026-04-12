@@ -1,0 +1,144 @@
+name: Monitor Upstream Releases
+
+on:
+  schedule:
+    - cron: '37 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Rebuild even if upstream is unchanged'
+        required: false
+        type: boolean
+        default: false
+      target:
+        description: 'Emulator to check (or all)'
+        required: false
+        type: choice
+        options:
+          - all
+          - retroarch
+          - ppsspp
+          - dolphin-emu
+        default: all
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  TARGET_WORKFLOW: publish.yml
+  GIT_USER: github-actions[bot]
+  GIT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: retroarch
+            repo: libretro/RetroArch
+            track_file: .github/upstream/retroarch-release.json
+            build_target: retroarch
+            check_ppa: true
+          - name: ppsspp
+            repo: hrydgard/ppsspp
+            track_file: .github/upstream/ppsspp-release.json
+            build_target: ppsspp
+            check_ppa: false
+          - name: dolphin-emu
+            repo: dolphin-emu/dolphin
+            track_file: .github/upstream/dolphin-release.json
+            build_target: dolphin-emu
+            check_ppa: false
+
+    steps:
+      - name: Skip if not selected
+        id: gate
+        run: |
+          TARGET="${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}"
+          [[ "${TARGET}" == "all" || "${TARGET}" == "${{ matrix.name }}" ]] && echo "skip=false" >> "$GITHUB_OUTPUT" || echo "skip=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Check upstream
+        if: steps.gate.outputs.skip != 'true'
+        id: check
+        env:
+          REPO: ${{ matrix.repo }}
+          TRACK_FILE: ${{ matrix.track_file }}
+          CHECK_PPA: ${{ matrix.check_ppa }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "${TRACK_FILE}")"
+          API="https://api.github.com/repos/${REPO}"
+
+          # Try latest release first, fall back to latest tag
+          RELEASE_JSON="$(curl -fsSL "${API}/releases/latest" 2>/dev/null || echo '{}')"
+          TAG="$(echo "${RELEASE_JSON}" | jq -r '.tag_name // empty')"
+          if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+            TAG="$(curl -fsSL "${API}/tags?per_page=1" | jq -r '.[0].name // empty')"
+          fi
+          [ -z "${TAG}" ] && echo "Failed to resolve tag for ${REPO}" && exit 1
+
+          NAME="$(echo "${RELEASE_JSON}" | jq -r '.name // empty')"
+          DATE="$(echo "${RELEASE_JSON}" | jq -r '.published_at // empty')"
+
+          # Optional PPA version check (RetroArch only)
+          PPA_VER=""
+          if [ "${CHECK_PPA}" = "true" ]; then
+            PPA_JSON="$(curl -fsSL "https://api.launchpad.net/1.0/~libretro/+archive/ubuntu/stable?ws.op=getPublishedBinaries&binary_name=retroarch&status=Published&distro_arch_series=https://api.launchpad.net/1.0/ubuntu/noble/amd64" 2>/dev/null || echo '{}')"
+            PPA_VER="$(echo "${PPA_JSON}" | jq -r '.entries[0].binary_package_version // empty' 2>/dev/null || echo '')"
+          fi
+
+          jq -n --arg tag "${TAG}" --arg name "${NAME}" --arg date "${DATE}" \
+            --arg ppa "${PPA_VER}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{release_tag:$tag, release_name:$name, release_date:$date, ppa_version:$ppa, checked_at:$at}' \
+            > /tmp/state.json
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+          if [ -f "${TRACK_FILE}" ]; then
+            OLD_TAG="$(jq -r '.release_tag // empty' "${TRACK_FILE}")"
+            OLD_PPA="$(jq -r '.ppa_version // empty' "${TRACK_FILE}")"
+            [[ "${TAG}" == "${OLD_TAG}" && "${PPA_VER}" == "${OLD_PPA}" ]] && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit tracked state
+        if: steps.gate.outputs.skip != 'true' && steps.check.outputs.changed == 'true'
+        env:
+          TRACK_FILE: ${{ matrix.track_file }}
+        run: |
+          cp /tmp/state.json "${TRACK_FILE}"
+          git config user.name "${GIT_USER}"
+          git config user.email "${GIT_EMAIL}"
+          git add "${TRACK_FILE}"
+          git diff --cached --quiet || git commit -m "chore(ci): track ${{ matrix.name }} ${{ steps.check.outputs.tag }}"
+          git push
+
+      - name: Trigger rebuild
+        if: steps.gate.outputs.skip != 'true' && (steps.check.outputs.changed == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_publish))
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
+            -d "{\"ref\":\"${{ github.event.repository.default_branch }}\",\"inputs\":{\"publish\":\"true\",\"target\":\"${{ matrix.build_target }}\"}}"
+
+      - name: Summary
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          echo "## ${{ matrix.name }} upstream" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Changed: ${{ steps.check.outputs.changed }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: ${{ steps.check.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source: [${{ matrix.repo }}](https://github.com/${{ matrix.repo }})" >> "$GITHUB_STEP_SUMMARY"

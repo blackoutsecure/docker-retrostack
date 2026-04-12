@@ -1,0 +1,29 @@
+name: Resolve upstream versions
+description: Read tracked versions from upstream JSON files
+
+outputs:
+  retroarch_version:
+    description: RetroArch version
+    value: ${{ steps.resolve.outputs.retroarch_version }}
+  ppsspp_version:
+    description: PPSSPP version
+    value: ${{ steps.resolve.outputs.ppsspp_version }}
+  dolphin_version:
+    description: Dolphin version
+    value: ${{ steps.resolve.outputs.dolphin_version }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      run: |
+        for pair in \
+          "retroarch_version .github/upstream/retroarch-release.json 1.22.0" \
+          "ppsspp_version .github/upstream/ppsspp-release.json v1.20.3" \
+          "dolphin_version .github/upstream/dolphin-release.json 2509"; do
+          read -r key file fallback <<< "${pair}"
+          val=""
+          [[ -f "${file}" ]] && val="$(jq -r '.release_tag // empty' "${file}")"
+          echo "${key}=${val:-${fallback}}" >> "$GITHUB_OUTPUT"
+        done

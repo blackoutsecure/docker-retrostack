@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.env
+.env.*
+*.env
+!.env.example
+*.log
+*.tmp
+.cache/
+*.orig
+*.rej

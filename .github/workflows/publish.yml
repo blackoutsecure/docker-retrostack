@@ -1,0 +1,472 @@
+name: Docker Hub and Balena Publish
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'esde-provision'
+      - '.github/workflows/publish.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-compose.yml'
+      - 'balena.yml'
+      - 'esde-provision'
+      - 'README.md'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Also publish to Docker Hub'
+        required: false
+        type: boolean
+        default: false
+      target:
+        description: 'Emulator target to build (or all)'
+        required: false
+        type: choice
+        options:
+          - all
+          - retroarch
+          - ppsspp
+          - dolphin-emu
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
+  IMAGE_NAME: esde-emulator-provider
+  REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+  DOCKERFILE_PATH: ./Dockerfile
+  BALENA_NAMESPACE: ${{ vars.BALENA_NAMESPACE || secrets.BALENA_USERNAME }}
+  BALENA_BLOCK_PREFIX: esde-emulator-provider
+
+jobs:
+  # ── Stage 1: Preflight ─────────────────────────────────────────────
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_publish: ${{ steps.context.outputs.should_publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine publish context
+        id: context
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate Dockerfile syntax
+        run: docker run --rm -i hadolint/hadolint:latest hadolint - < "${DOCKERFILE_PATH}" || true
+
+      - name: Validate required secrets and namespace
+        if: steps.context.outputs.should_publish == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_NAMESPACE: ${{ env.DOCKERHUB_NAMESPACE }}
+        run: |
+          set -euo pipefail
+
+          for var in DOCKERHUB_USERNAME DOCKERHUB_TOKEN DOCKERHUB_NAMESPACE; do
+            if [ -z "${!var}" ]; then
+              echo "${var} is not set"
+              exit 1
+            fi
+          done
+
+          if [[ "${DOCKERHUB_USERNAME}" =~ [[:space:]] ]]; then
+            echo "DOCKERHUB_USERNAME must not contain spaces"
+            exit 1
+          fi
+
+          if ! [[ "${DOCKERHUB_NAMESPACE}" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "DOCKERHUB_NAMESPACE has invalid format. Use lowercase Docker Hub namespace slug only."
+            exit 1
+          fi
+
+          echo "✓ Docker Hub credentials validated"
+
+  # ── Stage 2: Build ─────────────────────────────────────────────────
+  # Matrix build per emulator target × arch. Publishes digests on main.
+  docker:
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # RetroArch
+          - target: retroarch
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - target: retroarch
+            arch: arm64
+            runner: ubuntu-latest-arm64
+            platform: linux/arm64
+          # PPSSPP
+          - target: ppsspp
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - target: ppsspp
+            arch: arm64
+            runner: ubuntu-latest-arm64
+            platform: linux/arm64
+          # Dolphin
+          - target: dolphin-emu
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - target: dolphin-emu
+            arch: arm64
+            runner: ubuntu-latest-arm64
+            platform: linux/arm64
+
+    steps:
+      - name: Skip if target not selected
+        id: gate
+        run: |
+          DISPATCH_TARGET="${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}"
+          if [[ "${DISPATCH_TARGET}" != "all" && "${DISPATCH_TARGET}" != "${{ matrix.target }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        if: steps.gate.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Docker Hub login
+        if: steps.gate.outputs.skip != 'true' && needs.preflight.outputs.should_publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve versions
+        if: steps.gate.outputs.skip != 'true'
+        id: versions
+        uses: ./.github/actions/resolve-versions
+
+      - name: Resolve build metadata
+        if: steps.gate.outputs.skip != 'true'
+        id: params
+        run: |
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "version_label=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build only (PR/check mode)
+        if: steps.gate.outputs.skip != 'true' && needs.preflight.outputs.should_publish != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          push: false
+          platforms: ${{ matrix.platform }}
+          pull: true
+          provenance: false
+          build-args: |
+            RETROARCH_VERSION=${{ steps.versions.outputs.retroarch_version }}
+            PPSSPP_VERSION=${{ steps.versions.outputs.ppsspp_version }}
+            DOLPHIN_VERSION=${{ steps.versions.outputs.dolphin_version }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.params.outputs.build_date }}
+            org.opencontainers.image.version=check-${{ github.sha }}-${{ matrix.target }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ env.REPO_URL }}
+            org.opencontainers.image.url=${{ env.REPO_URL }}
+
+      - name: Build and publish by digest
+        if: steps.gate.outputs.skip != 'true' && needs.preflight.outputs.should_publish == 'true'
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          pull: true
+          provenance: false
+          build-args: |
+            RETROARCH_VERSION=${{ steps.versions.outputs.retroarch_version }}
+            PPSSPP_VERSION=${{ steps.versions.outputs.ppsspp_version }}
+            DOLPHIN_VERSION=${{ steps.versions.outputs.dolphin_version }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.created=${{ steps.params.outputs.build_date }}
+            org.opencontainers.image.version=${{ steps.params.outputs.version_label }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ env.REPO_URL }}
+            org.opencontainers.image.url=${{ env.REPO_URL }}
+
+      - name: Export and upload digest
+        if: steps.gate.outputs.skip != 'true' && needs.preflight.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          DIGEST="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest artifact
+        if: steps.gate.outputs.skip != 'true' && needs.preflight.outputs.should_publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.target }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Stage 3: Manifest ──────────────────────────────────────────────
+  # Assemble multi-arch manifests and tag on Docker Hub.
+  manifest:
+    needs: [preflight, docker]
+    if: needs.preflight.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [retroarch, ppsspp, dolphin-emu]
+    env:
+      DISPATCH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
+    steps:
+      - name: Skip if target not selected
+        id: gate
+        run: |
+          if [[ "${DISPATCH_TARGET}" != "all" && "${DISPATCH_TARGET}" != "${{ matrix.target }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Docker Hub login
+        if: steps.gate.outputs.skip != 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve versions
+        if: steps.gate.outputs.skip != 'true'
+        id: versions
+        uses: ./.github/actions/resolve-versions
+
+      - name: Download digest artifacts
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.target }}-*
+          merge-multiple: true
+
+      - name: Create and push multi-arch manifest
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          SHORT_SHA: ${{ github.sha }}
+          RETROARCH_VERSION: ${{ steps.versions.outputs.retroarch_version }}
+          PPSSPP_VERSION: ${{ steps.versions.outputs.ppsspp_version }}
+          DOLPHIN_VERSION: ${{ steps.versions.outputs.dolphin_version }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="${SHORT_SHA::12}"
+          TARGET="${{ matrix.target }}"
+
+          # Map target to its upstream version
+          case "${TARGET}" in
+            retroarch)   EMU_VERSION="${RETROARCH_VERSION}" ;;
+            ppsspp)      EMU_VERSION="${PPSSPP_VERSION}" ;;
+            dolphin-emu) EMU_VERSION="${DOLPHIN_VERSION}" ;;
+            *)           echo "Unknown target: ${TARGET}"; exit 1 ;;
+          esac
+
+          mapfile -t DIGESTS < <(find /tmp/digests -type f -printf '%f\n' | sort)
+
+          if [ "${#DIGESTS[@]}" -eq 0 ]; then
+            echo "No digests found for ${TARGET}"
+            exit 1
+          fi
+
+          SOURCES=()
+          for digest in "${DIGESTS[@]}"; do
+            SOURCES+=("${IMAGE_REF}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create \
+            --tag "${IMAGE_REF}:${TARGET}" \
+            --tag "${IMAGE_REF}:${TARGET}-latest" \
+            --tag "${IMAGE_REF}:${TARGET}-${EMU_VERSION}" \
+            --tag "${IMAGE_REF}:${TARGET}-sha-${SHORT_SHA}" \
+            "${SOURCES[@]}"
+
+          # Tag retroarch as :latest (default emulator for ES-DE)
+          if [[ "${TARGET}" == "retroarch" ]]; then
+            docker buildx imagetools create \
+              --tag "${IMAGE_REF}:latest" \
+              "${SOURCES[@]}"
+          fi
+
+          echo "Tags pushed for ${TARGET}:"
+          echo "  ${IMAGE_REF}:${TARGET}"
+          echo "  ${IMAGE_REF}:${TARGET}-latest"
+          echo "  ${IMAGE_REF}:${TARGET}-${EMU_VERSION}"
+          echo "  ${IMAGE_REF}:${TARGET}-sha-${SHORT_SHA}"
+
+          docker buildx imagetools inspect "${IMAGE_REF}:${TARGET}"
+
+  # ── Stage 4a: Update Docker Hub description ────────────────────────
+  update-description:
+    needs: manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update Docker Hub Description
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          short-description: ${{ github.event.repository.description }}
+          enable-url-completion: true
+
+  # ── Stage 4b: Publish Balena blocks (parallel with 4a) ─────────────
+  balena-block-publish:
+    needs: [preflight, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: retroarch
+          - target: ppsspp
+          - target: dolphin-emu
+    env:
+      DISPATCH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
+    steps:
+      - name: Skip if target not selected
+        id: gate
+        run: |
+          if [[ "${DISPATCH_TARGET}" != "all" && "${DISPATCH_TARGET}" != "${{ matrix.target }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Prepare Balena source
+        if: steps.gate.outputs.skip != 'true'
+        id: prep
+        run: |
+          set -euo pipefail
+          TARGET="${{ matrix.target }}"
+          DEPLOY_DIR="${GITHUB_WORKSPACE}/.balena-deploy-${TARGET}"
+          rm -rf "${DEPLOY_DIR}"
+          mkdir -p "${DEPLOY_DIR}"
+
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${TARGET}"
+
+          # Generate a minimal Balena-compatible v2.4 compose for this emulator
+          cat > "${DEPLOY_DIR}/docker-compose.yml" <<EOF
+          version: '2.4'
+          volumes:
+            esde-emulators: {}
+          services:
+            ${TARGET}:
+              image: ${IMAGE_REF}
+              volumes:
+                - esde-emulators:/export
+              restart: 'no'
+          EOF
+          # Strip leading whitespace from heredoc
+          sed -i 's/^          //' "${DEPLOY_DIR}/docker-compose.yml"
+
+          # Copy balena.yml
+          cp balena.yml "${DEPLOY_DIR}/balena.yml"
+
+          echo "deploy_dir=${DEPLOY_DIR}" >> "$GITHUB_OUTPUT"
+
+          echo "--- Generated compose for ${TARGET} ---"
+          cat "${DEPLOY_DIR}/docker-compose.yml"
+
+      - name: Resolve Balena fleet
+        if: steps.gate.outputs.skip != 'true'
+        id: targets
+        run: |
+          set -euo pipefail
+          BLOCK_FLEET="${BALENA_NAMESPACE}/${BALENA_BLOCK_PREFIX}-${{ matrix.target }}"
+          echo "block_fleet=${BLOCK_FLEET}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Balena block (action)
+        if: steps.gate.outputs.skip != 'true' && github.event_name != 'workflow_dispatch'
+        uses: balena-io/deploy-to-balena-action@master
+        with:
+          balena_token: ${{ secrets.BALENA_API_TOKEN }}
+          fleet: ${{ steps.targets.outputs.block_fleet }}
+          cache: false
+          layer_cache: false
+          debug: false
+          source: ${{ steps.prep.outputs.deploy_dir }}
+
+      - name: Install Balena CLI (workflow_dispatch)
+        if: steps.gate.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
+        run: npm install -g balena-cli
+
+      - name: Publish Balena block (CLI, workflow_dispatch)
+        if: steps.gate.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          BALENA_TOKEN: ${{ secrets.BALENA_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          balena login --token "${BALENA_TOKEN}"
+          echo "Pushing to fleet: ${{ steps.targets.outputs.block_fleet }}"
+          balena push "${{ steps.targets.outputs.block_fleet }}" --source "${{ steps.prep.outputs.deploy_dir }}" --nocache
+
+      - name: Log deployment info
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          echo "Published ${{ matrix.target }} block: ${{ steps.targets.outputs.block_fleet }}"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}"

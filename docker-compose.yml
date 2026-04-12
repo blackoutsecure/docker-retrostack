@@ -1,0 +1,30 @@
+volumes:
+  emulationstation-emulators:
+
+services:
+  retroarch:
+    build:
+      context: .
+      target: retroarch
+    image: blackoutsecure/esde-emulator-provider:retroarch
+    volumes:
+      - emulationstation-emulators:/export
+    restart: "no"
+
+  ppsspp:
+    build:
+      context: .
+      target: ppsspp
+    image: blackoutsecure/esde-emulator-provider:ppsspp
+    volumes:
+      - emulationstation-emulators:/export
+    restart: "no"
+
+  dolphin-emu:
+    build:
+      context: .
+      target: dolphin-emu
+    image: blackoutsecure/esde-emulator-provider:dolphin-emu
+    volumes:
+      - emulationstation-emulators:/export
+    restart: "no"
