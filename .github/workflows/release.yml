@@ -17,7 +17,7 @@ permissions:
 env:
   REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
-  IMAGE_NAME: esde-emulator-provider
+  IMAGE_NAME: emulationstation-de-emulator-provider
   REPO_URL: ${{ github.server_url }}/${{ github.repository }}
 
 jobs:
