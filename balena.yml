@@ -12,7 +12,7 @@ assets:
   repository:
     type: blob.asset
     data:
-      url: 'https://github.com/blackoutsecure/docker-esde-emulator-provider'
+      url: 'https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider'
 
 data:
   defaultDeviceType: raspberrypi4-64
@@ -42,4 +42,4 @@ post-provisioning: >-
 
   Docker Hub: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
 
-  Repository: https://github.com/blackoutsecure/docker-esde-emulator-provider
+  Repository: https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider

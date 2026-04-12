@@ -1,4 +1,8 @@
-# docker-esde-emulator-provider
+# docker-emulationstation-de-emulator-provider
+
+[![CI](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml/badge.svg)](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml)
+[![Docker Hub](https://img.shields.io/docker/pulls/blackoutsecure/esde-emulator-provider)](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Emulator sidecar images for [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de). Each image is an init-container that provisions an emulator binary, shared libraries, and (for RetroArch) libretro cores onto a shared Docker volume, then exits.
 
@@ -50,6 +54,12 @@ A single [GitHub Actions workflow](.github/workflows/upstream-monitor.yml) monit
 
 Tracked versions are stored in `.github/upstream/*.json` and read by the publish/release workflows.
 
+## Prerequisites
+
+- Docker 24+ with BuildKit enabled
+- Docker Compose v2 (for local dev)
+- ~4 GB disk space per emulator target (build stage)
+
 ## Quick Start
 
 ```bash
@@ -93,6 +103,14 @@ docker build --build-arg PPSSPP_VERSION=v1.20.3 --target ppsspp .
 ## Licenses
 
 This repo's packaging code is MIT licensed. Emulators retain their original licenses — see [LICENSE](LICENSE) for third-party notices.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+To report a vulnerability, please see [SECURITY.md](SECURITY.md).
 
 ## References
 

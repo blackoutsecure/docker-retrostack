@@ -19,9 +19,12 @@ ARG RETROARCH_VERSION
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates gnupg && \
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 \
-      --recv-keys 3B2BA0B6750986899B189AFF18DAAE7FECA3745F && \
-    echo "deb https://ppa.launchpadcontent.net/libretro/stable/ubuntu noble main" \
+    install -m 0755 -d /etc/apt/keyrings && \
+    gpg --keyserver hkp://keyserver.ubuntu.com:80 \
+        --recv-keys 3B2BA0B6750986899B189AFF18DAAE7FECA3745F && \
+    gpg --export 3B2BA0B6750986899B189AFF18DAAE7FECA3745F \
+        > /etc/apt/keyrings/libretro.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/libretro.gpg] https://ppa.launchpadcontent.net/libretro/stable/ubuntu noble main" \
       > /etc/apt/sources.list.d/retroarch.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -30,11 +33,15 @@ RUN apt-get update && \
       libretro-nestopia libretro-genesisplusgx libretro-beetle-pce-fast && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+LABEL org.opencontainers.image.title="esde-emulator-provider:retroarch" \
+      org.opencontainers.image.description="RetroArch + libretro cores sidecar for ES-DE" \
+      org.opencontainers.image.licenses="MIT AND GPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
+
 ENV EMULATOR_NAME=retroarch \
     EMULATOR_BINARY=/usr/bin/retroarch
 
-COPY esde-provision /usr/local/bin/esde-provision
-RUN chmod 755 /usr/local/bin/esde-provision
+COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
 VOLUME /export
 ENTRYPOINT ["/usr/local/bin/esde-provision"]
 
@@ -69,11 +76,15 @@ RUN apt-get update && \
 COPY --from=ppsspp-build /tmp/ppsspp/build/PPSSPPSDL /usr/bin/PPSSPPSDL
 COPY --from=ppsspp-build /tmp/ppsspp/build/assets /usr/local/share/ppsspp/assets
 
+LABEL org.opencontainers.image.title="esde-emulator-provider:ppsspp" \
+      org.opencontainers.image.description="PPSSPP (PSP) sidecar for ES-DE" \
+      org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later" \
+      org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
+
 ENV EMULATOR_NAME=ppsspp \
     EMULATOR_BINARY=/usr/bin/PPSSPPSDL
 
-COPY esde-provision /usr/local/bin/esde-provision
-RUN chmod 755 /usr/local/bin/esde-provision
+COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
 VOLUME /export
 ENTRYPOINT ["/usr/local/bin/esde-provision"]
 
@@ -121,10 +132,14 @@ RUN apt-get update && \
 COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu /usr/bin/dolphin-emu
 COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu-nogui /usr/bin/dolphin-emu-nogui
 
+LABEL org.opencontainers.image.title="esde-emulator-provider:dolphin-emu" \
+      org.opencontainers.image.description="Dolphin (GameCube/Wii) sidecar for ES-DE" \
+      org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later" \
+      org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
+
 ENV EMULATOR_NAME=dolphin-emu \
     EMULATOR_BINARY=/usr/bin/dolphin-emu
 
-COPY esde-provision /usr/local/bin/esde-provision
-RUN chmod 755 /usr/local/bin/esde-provision
+COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
 VOLUME /export
 ENTRYPOINT ["/usr/local/bin/esde-provision"]
