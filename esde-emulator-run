@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# esde-emulator-run — Entrypoint for emulator containers.
+#
+# Modes:
+#   1. Standalone game launch:
+#        docker run ... :retroarch /path/to/rom.gba
+#        docker run ... :retroarch --core snes9x /path/to/rom.sfc
+#
+#   2. Daemon mode (no args — stays alive, emulator available for ES-DE
+#        to exec via esde-emuwrap on the provisioned volume, or via
+#        docker exec for direct container access):
+#        docker run -d ... :retroarch
+#
+#   3. Provision-only (explicit — provision and exit):
+#        docker run -e EMULATOR_MODE=provision ... :retroarch
+#
+# Volume provisioning:
+#   When /export is mounted, binaries are automatically provisioned to
+#   /export/<name>/ on startup (both daemon and standalone modes).
+#   This is how docker-emulationstation-de discovers emulators:
+#     - ES-DE mounts the same volume at /emulators/
+#     - svc-esde scans /emulators/*/ for bin/<name>
+#     - esde-emuwrap symlinks and exec's the binary with LD_LIBRARY_PATH
+#
+# Environment:
+#   EMULATOR_NAME   — required (e.g. "retroarch", "ppsspp", "dolphin-emu")
+#   EMULATOR_BINARY — path to emulator binary (default: /usr/bin/${EMULATOR_NAME})
+#   EMULATOR_MODE   — "run" (default) | "provision"
+#   EMULATOR_CORE   — default libretro core for RetroArch (optional)
+#   DISPLAY         — X11 display (default: :0)
+#   PULSE_SERVER    — PulseAudio server (optional)
+
+TAG="[esde-emulator:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
+EMULATOR_BINARY="${EMULATOR_BINARY:-/usr/bin/${EMULATOR_NAME}}"
+EMULATOR_MODE="${EMULATOR_MODE:-run}"
+
+log() { echo "${TAG} $*"; }
+
+# -------------------------------------------------------------------
+# Provision-only mode — provision and exit
+# -------------------------------------------------------------------
+if [[ "${EMULATOR_MODE}" == "provision" ]]; then
+  exec /usr/local/bin/esde-provision "$@"
+fi
+
+# -------------------------------------------------------------------
+# Validate emulator binary
+# -------------------------------------------------------------------
+if [[ ! -x "${EMULATOR_BINARY}" ]]; then
+  log "ERROR: binary not found or not executable: ${EMULATOR_BINARY}"
+  exit 1
+fi
+
+# Ensure DISPLAY is set for graphical emulators
+export DISPLAY="${DISPLAY:-:0}"
+
+# -------------------------------------------------------------------
+# Auto-provision to /export/ if mounted (ES-DE integration)
+# -------------------------------------------------------------------
+if [[ -d /export && -w /export ]]; then
+  log "Provisioning binaries to /export/ for ES-DE integration..."
+  /usr/local/bin/esde-provision || log "WARNING: provision to /export/ failed"
+fi
+
+# -------------------------------------------------------------------
+# Parse arguments
+# -------------------------------------------------------------------
+CORE=""
+ROM=""
+EXTRA_ARGS=()
+
+usage() {
+  cat <<EOF
+${TAG} Usage:
+  Standalone:  <entrypoint> [--core <core>] [emulator-args...] <rom-path>
+  Daemon:      <entrypoint>  (no arguments — stays alive for docker exec)
+  Provision:   EMULATOR_MODE=provision <entrypoint>
+
+Environment:
+  EMULATOR_NAME    Emulator identifier (retroarch, ppsspp, dolphin-emu)
+  EMULATOR_BINARY  Path to emulator binary
+  EMULATOR_CORE    Default libretro core (RetroArch only)
+  DISPLAY          X11 display (default: :0)
+
+Examples:
+  # Run a game standalone
+  docker run --rm ... :retroarch --core gambatte /roms/gb/game.gb
+
+  # Daemon mode — launch games via docker exec
+  docker run -d ... :retroarch
+  docker exec <container> retroarch -L /usr/lib/libretro/gambatte_libretro.so /roms/gb/game.gb
+
+  # Daemon mode — launch PPSSPP game via docker exec
+  docker run -d ... :ppsspp
+  docker exec <container> PPSSPPSDL /roms/psp/game.iso
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --core|-c)
+      CORE="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      EXTRA_ARGS+=("$@")
+      break
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# -------------------------------------------------------------------
+# Daemon mode — no ROM/args given, stay alive
+# ES-DE integration: ES-DE exec's the provisioned binary directly
+#   via esde-emuwrap on the shared /emulators volume.
+# Direct access: docker exec <container> <emulator> <args> <rom>
+# -------------------------------------------------------------------
+if [[ ${#EXTRA_ARGS[@]} -eq 0 && -z "${ROM}" ]]; then
+  log "Daemon mode — ${EMULATOR_NAME} container ready"
+
+  # Print emulator version
+  VERSION_OUTPUT=""
+  if VERSION_OUTPUT="$(timeout 5 "${EMULATOR_BINARY}" --version 2>&1 | head -n 1)" 2>/dev/null; then
+    log "Version: ${VERSION_OUTPUT}"
+  fi
+
+  # RetroArch: list available cores
+  if [[ "${EMULATOR_NAME}" == "retroarch" ]]; then
+    CORE_COUNT=0
+    for core_dir in /usr/lib/libretro /usr/lib/*/libretro; do
+      [[ -d "${core_dir}" ]] || continue
+      for core_file in "${core_dir}"/*.so; do
+        [[ -f "${core_file}" ]] || continue
+        CORE_COUNT=$((CORE_COUNT + 1))
+      done
+    done
+    log "Available libretro cores: ${CORE_COUNT}"
+  fi
+
+  if [[ -d /export && -w /export ]]; then
+    log "ES-DE integration: binaries provisioned to /export/${EMULATOR_NAME}/"
+    log "  ES-DE mounts this volume at /emulators/ and discovers automatically."
+  fi
+  log "Direct access: docker exec <container> ${EMULATOR_BINARY##*/} <args> <rom>"
+  log "Container staying alive — use 'docker stop' to shut down."
+
+  # Stay alive — sleep in a loop so signals are handled
+  trap 'log "Shutting down."; exit 0' SIGTERM SIGINT
+  while true; do
+    sleep 3600 &
+    wait $! || true
+  done
+fi
+
+# -------------------------------------------------------------------
+# Standalone mode — launch emulator with the given ROM/args
+# -------------------------------------------------------------------
+log "Launching ${EMULATOR_NAME} in standalone mode"
+
+# Build the command based on emulator type
+case "${EMULATOR_NAME}" in
+  retroarch)
+    # Resolve core path
+    CORE="${CORE:-${EMULATOR_CORE:-}}"
+    if [[ -n "${CORE}" ]]; then
+      # If core is just a name (e.g. "gambatte"), resolve to full path
+      if [[ "${CORE}" != /* ]]; then
+        CORE_RESOLVED=""
+        for core_dir in /usr/lib/libretro /usr/lib/*/libretro; do
+          [[ -d "${core_dir}" ]] || continue
+          if [[ -f "${core_dir}/${CORE}_libretro.so" ]]; then
+            CORE_RESOLVED="${core_dir}/${CORE}_libretro.so"
+            break
+          elif [[ -f "${core_dir}/${CORE}.so" ]]; then
+            CORE_RESOLVED="${core_dir}/${CORE}.so"
+            break
+          fi
+        done
+        if [[ -z "${CORE_RESOLVED}" ]]; then
+          log "ERROR: core '${CORE}' not found in libretro directories"
+          exit 1
+        fi
+        CORE="${CORE_RESOLVED}"
+      fi
+      log "Using core: ${CORE}"
+      exec "${EMULATOR_BINARY}" -L "${CORE}" "${EXTRA_ARGS[@]}"
+    else
+      exec "${EMULATOR_BINARY}" "${EXTRA_ARGS[@]}"
+    fi
+    ;;
+
+  ppsspp)
+    exec "${EMULATOR_BINARY}" "${EXTRA_ARGS[@]}"
+    ;;
+
+  dolphin-emu)
+    # Prefer nogui for headless/kiosk, but fall back to regular
+    if [[ -x /usr/bin/dolphin-emu-nogui ]]; then
+      exec /usr/bin/dolphin-emu-nogui "${EXTRA_ARGS[@]}"
+    else
+      exec "${EMULATOR_BINARY}" "${EXTRA_ARGS[@]}"
+    fi
+    ;;
+
+  *)
+    exec "${EMULATOR_BINARY}" "${EXTRA_ARGS[@]}"
+    ;;
+esac

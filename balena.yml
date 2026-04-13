@@ -1,8 +1,9 @@
 name: esde-emulator-provider
 description: >-
-  Emulator sidecar init-containers for docker-emulationstation-de.
-  Each block provisions an emulator binary (RetroArch, PPSSPP, or Dolphin)
-  onto a shared volume for ES-DE to launch games from.
+  Emulator runtime containers for docker-emulationstation-de.
+  Each container provisions emulator binaries onto a shared volume for
+  ES-DE to discover via esde-emuwrap, then stays alive. Also supports
+  standalone game launch with a ROM argument.
   Available as individual Balena blocks — compose only the emulators you need.
 
 version: 1.0.0
@@ -23,12 +24,11 @@ data:
     - raspberrypi400-64
 
 post-provisioning: >-
-  ## Emulator Provider Blocks
+  ## Emulator Provider Containers
 
-  These init-containers provision emulator binaries onto a shared volume.
-  Use them alongside the main
-  [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
-  block.
+  These containers run emulators directly — either standalone or triggered
+  by [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
+  when a game is selected.
 
   ### Available Emulators
 
@@ -36,9 +36,12 @@ post-provisioning: >-
   - **ppsspp** — PPSSPP (PlayStation Portable)
   - **dolphin-emu** — Dolphin (GameCube / Wii)
 
-  Each emulator is published as a separate Balena block. Add the
-  emulator services to your fleet compose alongside ES-DE, sharing
-  the `esde-emulators` volume.
+  ### Usage Modes
+
+  - **Standalone**: Pass a ROM path to run a game directly
+  - **Daemon**: Container provisions binaries to shared volume, stays alive;
+    ES-DE discovers and launches emulators via esde-emuwrap
+  - **Provision-only**: Set `EMULATOR_MODE=provision` to provision and exit
 
   Docker Hub: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
 

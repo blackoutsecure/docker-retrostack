@@ -1,5 +1,7 @@
 volumes:
   emulationstation-emulators:
+  emulationstation-roms:
+  emulationstation-bios:
 
 services:
   retroarch:
@@ -7,24 +9,61 @@ services:
       context: .
       target: retroarch
     image: blackoutsecure/esde-emulator-provider:retroarch
+    container_name: esde-retroarch
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
+      - EMULATOR_CORE=${EMULATOR_CORE:-}
     volumes:
       - emulationstation-emulators:/export
-    restart: "no"
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+      - /dev/snd:/dev/snd
+    shm_size: 1gb
+    restart: unless-stopped
 
   ppsspp:
     build:
       context: .
       target: ppsspp
     image: blackoutsecure/esde-emulator-provider:ppsspp
+    container_name: esde-ppsspp
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
     volumes:
       - emulationstation-emulators:/export
-    restart: "no"
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+      - /dev/snd:/dev/snd
+    shm_size: 1gb
+    restart: unless-stopped
 
   dolphin-emu:
     build:
       context: .
       target: dolphin-emu
     image: blackoutsecure/esde-emulator-provider:dolphin-emu
+    container_name: esde-dolphin-emu
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
     volumes:
       - emulationstation-emulators:/export
-    restart: "no"
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+      - /dev/snd:/dev/snd
+    shm_size: 1gb
+    restart: unless-stopped

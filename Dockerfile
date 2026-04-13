@@ -1,11 +1,18 @@
 # syntax=docker/dockerfile:1
 #
-# Emulator sidecar images for docker-emulationstation-de.
-# Each target produces an init-container that provisions a single emulator
-# onto /export/<name>/ via esde-provision, then exits.
+# Emulator runtime images for docker-emulationstation-de.
+# Each target produces a long-running container that either:
+#   1) Runs a game directly (standalone mode)
+#   2) Stays alive for docker exec calls from the ES-DE frontend
 #
 # Build:  docker build --target retroarch -t blackoutsecure/esde-emulator-provider:retroarch .
 # Override version: docker build --build-arg PPSSPP_VERSION=v1.20.3 --target ppsspp .
+
+# Base image — LinuxServer.io Ubuntu with s6-overlay init system.
+ARG BASE_IMAGE_REGISTRY=ghcr.io
+ARG BASE_IMAGE_NAME=linuxserver/baseimage-ubuntu
+ARG BASE_IMAGE_VARIANT=noble
+ARG BASE_IMAGE=${BASE_IMAGE_REGISTRY}/${BASE_IMAGE_NAME}:${BASE_IMAGE_VARIANT}
 
 # Upstream-tracked versions — injected by CI or overridden via --build-arg.
 ARG RETROARCH_VERSION=1.22.0
@@ -13,7 +20,7 @@ ARG PPSSPP_VERSION=v1.20.3
 ARG DOLPHIN_VERSION=2509
 
 # --- RetroArch (from ppa:libretro/stable) ------------------------------------
-FROM ubuntu:noble AS retroarch
+FROM ${BASE_IMAGE} AS retroarch
 
 ARG RETROARCH_VERSION
 
@@ -34,16 +41,20 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.title="esde-emulator-provider:retroarch" \
-      org.opencontainers.image.description="RetroArch + libretro cores sidecar for ES-DE" \
+      org.opencontainers.image.description="RetroArch + libretro cores runtime for ES-DE" \
       org.opencontainers.image.licenses="MIT AND GPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
 
 ENV EMULATOR_NAME=retroarch \
-    EMULATOR_BINARY=/usr/bin/retroarch
+    EMULATOR_BINARY=/usr/bin/retroarch \
+    DISPLAY=:0
 
 COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
+COPY --chmod=755 esde-emulator-run /usr/local/bin/esde-emulator-run
 VOLUME /export
-ENTRYPOINT ["/usr/local/bin/esde-provision"]
+VOLUME /roms
+VOLUME /bios
+ENTRYPOINT ["/usr/local/bin/esde-emulator-run"]
 
 # --- PPSSPP builder (from source) --------------------------------------------
 FROM ubuntu:noble AS ppsspp-build
@@ -65,7 +76,8 @@ RUN git clone --depth 1 --branch "${PPSSPP_VERSION}" \
     strip /tmp/ppsspp/build/PPSSPPSDL
 
 # --- PPSSPP runtime -----------------------------------------------------------
-FROM ubuntu:noble AS ppsspp
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS ppsspp
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -77,16 +89,20 @@ COPY --from=ppsspp-build /tmp/ppsspp/build/PPSSPPSDL /usr/bin/PPSSPPSDL
 COPY --from=ppsspp-build /tmp/ppsspp/build/assets /usr/local/share/ppsspp/assets
 
 LABEL org.opencontainers.image.title="esde-emulator-provider:ppsspp" \
-      org.opencontainers.image.description="PPSSPP (PSP) sidecar for ES-DE" \
+      org.opencontainers.image.description="PPSSPP (PSP) runtime for ES-DE" \
       org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later" \
       org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
 
 ENV EMULATOR_NAME=ppsspp \
-    EMULATOR_BINARY=/usr/bin/PPSSPPSDL
+    EMULATOR_BINARY=/usr/bin/PPSSPPSDL \
+    DISPLAY=:0
 
 COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
+COPY --chmod=755 esde-emulator-run /usr/local/bin/esde-emulator-run
 VOLUME /export
-ENTRYPOINT ["/usr/local/bin/esde-provision"]
+VOLUME /roms
+VOLUME /bios
+ENTRYPOINT ["/usr/local/bin/esde-emulator-run"]
 
 # --- Dolphin builder (from source) --------------------------------------------
 FROM ubuntu:noble AS dolphin-build
@@ -115,7 +131,8 @@ RUN git clone --depth 1 --branch "${DOLPHIN_VERSION}" \
           /tmp/dolphin/build/Binaries/dolphin-emu-nogui
 
 # --- Dolphin runtime ----------------------------------------------------------
-FROM ubuntu:noble AS dolphin-emu
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS dolphin-emu
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -133,13 +150,17 @@ COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu /usr/bin/dolph
 COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu-nogui /usr/bin/dolphin-emu-nogui
 
 LABEL org.opencontainers.image.title="esde-emulator-provider:dolphin-emu" \
-      org.opencontainers.image.description="Dolphin (GameCube/Wii) sidecar for ES-DE" \
+      org.opencontainers.image.description="Dolphin (GameCube/Wii) runtime for ES-DE" \
       org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later" \
       org.opencontainers.image.source="https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
 
 ENV EMULATOR_NAME=dolphin-emu \
-    EMULATOR_BINARY=/usr/bin/dolphin-emu
+    EMULATOR_BINARY=/usr/bin/dolphin-emu \
+    DISPLAY=:0
 
 COPY --chmod=755 esde-provision /usr/local/bin/esde-provision
+COPY --chmod=755 esde-emulator-run /usr/local/bin/esde-emulator-run
 VOLUME /export
-ENTRYPOINT ["/usr/local/bin/esde-provision"]
+VOLUME /roms
+VOLUME /bios
+ENTRYPOINT ["/usr/local/bin/esde-emulator-run"]
