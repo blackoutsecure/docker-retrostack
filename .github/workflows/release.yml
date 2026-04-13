@@ -104,6 +104,7 @@ jobs:
           provenance: false
           platforms: linux/amd64,linux/arm64
           build-args: |
+            RETROSTACK_VERSION=${{ needs.resolve-release.outputs.release_tag }}
             RETROARCH_VERSION=${{ steps.versions.outputs.retroarch_version }}
             PPSSPP_VERSION=${{ steps.versions.outputs.ppsspp_version }}
             DOLPHIN_VERSION=${{ steps.versions.outputs.dolphin_version }}
@@ -113,37 +114,85 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ env.REPO_URL }}
             org.opencontainers.image.url=${{ env.REPO_URL }}
+            org.opencontainers.image.vendor=Blackout Secure
+            io.retrostack.version=${{ needs.resolve-release.outputs.release_tag }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ needs.resolve-release.outputs.release_tag }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ needs.resolve-release.outputs.release_tag }}-${{ matrix.target }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ needs.resolve-release.outputs.release_tag }}-${{ github.sha }}
             ${{ matrix.target == 'retroarch' && format('{0}/{1}/{2}:latest', env.REGISTRY, env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}
+            ${{ matrix.target == 'retroarch' && format('{0}/{1}/{2}:{3}', env.REGISTRY, env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME, needs.resolve-release.outputs.release_tag) || '' }}
 
   create-github-release:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [resolve-release, build-and-publish]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve versions
+        id: versions
+        uses: ./.github/actions/resolve-versions
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.resolve-release.outputs.release_tag }}
           name: ${{ needs.resolve-release.outputs.release_name }}
           body: |
-            ## Emulator Provider Sidecar Release
+            ## RetroStack Release
 
-            - Image: `${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}`
-            - Version: `${{ needs.resolve-release.outputs.release_tag }}`
-            - Built from: `${{ github.sha }}`
+            - **RetroStack version**: `${{ needs.resolve-release.outputs.release_tag }}`
+            - **Image**: `${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}`
+            - **Built from**: `${{ github.sha }}`
 
-            ### Available Tags
+            ### Emulator Versions
 
-            | Emulator | Pull Command |
-            |----------|-------------|
-            | RetroArch | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:retroarch` |
-            | PPSSPP | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:ppsspp` |
-            | Dolphin | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:dolphin-emu` |
+            | Emulator | Version | Pull Command |
+            |----------|---------|-------------|
+            | RetroArch | `${{ steps.versions.outputs.retroarch_version }}` | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:retroarch` |
+            | PPSSPP | `${{ steps.versions.outputs.ppsspp_version }}` | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:ppsspp` |
+            | Dolphin | `${{ steps.versions.outputs.dolphin_version }}` | `docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}:dolphin-emu` |
 
-            Pinned version tags: `<target>-${{ needs.resolve-release.outputs.release_tag }}`
+            ### Tag Scheme
+
+            - Rolling: `:retroarch`, `:ppsspp`, `:dolphin-emu`, `:latest`
+            - Platform-pinned: `:${{ needs.resolve-release.outputs.release_tag }}-retroarch`, etc.
+            - Emulator-pinned: `:retroarch-<emu-version>`
+            - Commit-pinned: `:retroarch-${{ needs.resolve-release.outputs.release_tag }}-${{ github.sha }}`
           draft: false
           prerelease: false
+
+  bump-version:
+    needs: [resolve-release, build-and-publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ github.token }}
+
+      - name: Update VERSION and balena.yml
+        env:
+          NEW_VERSION: ${{ needs.resolve-release.outputs.release_tag }}
+          GIT_USER: github-actions[bot]
+          GIT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          CURRENT="$(tr -d '[:space:]' < VERSION)"
+          if [[ "${CURRENT}" == "${NEW_VERSION}" ]]; then
+            echo "VERSION already at ${NEW_VERSION}, skipping."
+            exit 0
+          fi
+          echo "${NEW_VERSION}" > VERSION
+          sed -i "s/^version: .*/version: ${NEW_VERSION}/" balena.yml
+          git config user.name "${GIT_USER}"
+          git config user.email "${GIT_EMAIL}"
+          git add VERSION balena.yml
+          git diff --cached --quiet || git commit -m "chore: bump version to ${NEW_VERSION}"
+          git push

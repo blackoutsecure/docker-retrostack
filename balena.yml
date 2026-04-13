@@ -1,25 +1,20 @@
 name: retrostack
 description: >-
-  RetroStack: a modular Docker platform providing scalable, multi‑emulator
-  support for retro gaming. Run RetroArch, PPSSPP, or Dolphin standalone
-  or as composable services. Features multi-arch images, profile-based
-  emulator selection, persistent config/saves, gamepad auto-detection,
-  and optional EmulationStation-DE integration. Available as individual
-  Balena blocks — compose only the emulators you need.
-
+  RetroStack: a modular Docker platform providing scalable, multi-emulator
+  support for retro gaming. Available as individual Balena blocks.
   Docker Hub: blackoutsecure/retrostack
-
   Repository: https://github.com/blackoutsecure/docker-retrostack
-
 version: 1.0.0
 type: sw.block
-
 assets:
   repository:
     type: blob.asset
     data:
       url: 'https://github.com/blackoutsecure/docker-retrostack'
-
+  logo:
+    type: blob.asset
+    data:
+      url: 'https://raw.githubusercontent.com/blackoutsecure/docker-retrostack/main/logo.png'
 data:
   defaultDeviceType: raspberrypi4-64
   supportedDeviceTypes:
@@ -29,25 +24,6 @@ data:
     - raspberrypi400-64
 
 post-provisioning: >-
-  ## Emulator Provider Containers
-
-  These containers run emulators directly — either standalone or triggered
-  by [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
-  when a game is selected.
-
-  ### Available Emulators
-
-  - **retroarch** — RetroArch + libretro cores (multi-system)
-  - **ppsspp** — PPSSPP (PlayStation Portable)
-  - **dolphin-emu** — Dolphin (GameCube / Wii)
-
-  ### Usage
-
-  Pick a profile:
-
-    docker compose --profile retroarch up -d
-    docker compose --profile all up -d
-
-  Docker Hub: [blackoutsecure/retrostack](https://hub.docker.com/r/blackoutsecure/retrostack)
-
-  Repository: https://github.com/blackoutsecure/docker-retrostack
+  RetroStack emulator containers. Pick a profile:
+  `docker compose --profile retroarch up -d` or `--profile all`.
+  Docker Hub: https://hub.docker.com/r/blackoutsecure/retrostack

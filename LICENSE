@@ -1,6 +1,7 @@
 MIT License
 
-Copyright (c) 2026 Blackout Secure (RetroStack — Docker packaging and container configuration)
+Copyright (c) 2026 Blackout Secure (https://blackoutsecure.app)
+RetroStack — Docker packaging and container configuration
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +28,9 @@ Third-Party Components
 
 This project packages and distributes the following third-party software
 and assets, each under its own license. The MIT License above applies only
-to the Docker packaging, CI/CD workflows, and scripts (retrostack-emulator-run,
-retrostack-emulator-launch, retrostack-provision) in this repository.
+to the Docker packaging, CI/CD workflows, and scripts (retrostack-lib.sh,
+retrostack-emulator-run, retrostack-emulator-launch, retrostack-provision)
+in this repository.
 
 
 RetroArch

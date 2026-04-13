@@ -1,331 +1,123 @@
 #!/usr/bin/env bash
+# retrostack-emulator-run — Entrypoint for RetroStack emulator containers.
+# Copyright (c) 2026 Blackout Secure (https://blackoutsecure.app). MIT License. See LICENSE.
 set -euo pipefail
 
-# retrostack-emulator-run — Entrypoint for RetroStack emulator containers.
-#
-# Modes:
-#   1. Standalone game launch:
-#        docker run ... :retroarch /path/to/rom.gba
-#        docker run ... :retroarch --core snes9x /path/to/rom.sfc
-#
-#   2. Daemon mode (no args — stays alive, listens on a FIFO control pipe
-#      for game launch commands from ES-DE or any external caller):
-#        docker run -d ... :retroarch
-#
-# Control pipe protocol (daemon mode):
-#   The container creates a named pipe (FIFO) at:
-#     /run/retrostack-emulators/<emulator-name>.cmd    (commands in)
-#     /run/retrostack-emulators/<emulator-name>.status  (exit code out)
-#
-#   To launch a game, the caller writes a NUL-delimited arg list to .cmd,
-#   then reads the exit code from .status.
-#
-# Shared volumes:
-#   /run/retrostack-emulators   — control pipes
-#   /roms                 — ROM library (read-only)
-#   /bios                 — BIOS files (read-only)
-#   /config               — emulator config, saves, and states (persistent)
-#   /tmp/.X11-unix        — X11 display socket
-#   /run/pulse            — PulseAudio socket
-#   /run/retrostack-shared      — shared runtime (gamepad mappings, xauthority)
-#
-# Environment:
-#   EMULATOR_NAME   — required (e.g. "retroarch", "ppsspp", "dolphin-emu")
-#   EMULATOR_BINARY — path to emulator binary (default: /usr/bin/${EMULATOR_NAME})
-#   EMULATOR_CORE   — default libretro core for RetroArch (optional)
-#   DISPLAY         — X11 display (default: :0)
-#   PULSE_SERVER    — PulseAudio server (optional)
+# shellcheck source=/dev/null
+source /usr/local/lib/retrostack-lib.sh
 
-TAG="[retrostack-emulator:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
-EMULATOR_BINARY="${EMULATOR_BINARY:-/usr/bin/${EMULATOR_NAME}}"
+rs_require_emulator_name
+rs_validate_binary
+rs_setup_display
+rs_setup_audio
+rs_setup_gamepad
 
-log() { echo "${TAG} $*"; }
-
-# -------------------------------------------------------------------
-# Validate emulator binary
-# -------------------------------------------------------------------
-if [[ ! -x "${EMULATOR_BINARY}" ]]; then
-  log "ERROR: binary not found or not executable: ${EMULATOR_BINARY}"
-  exit 1
-fi
-
-# -------------------------------------------------------------------
-# Display setup
-# -------------------------------------------------------------------
-export DISPLAY="${DISPLAY:-:0}"
-
-# Inherit Xauthority from shared runtime if available
-if [[ -f /run/retrostack-shared/.Xauthority ]]; then
-  export XAUTHORITY=/run/retrostack-shared/.Xauthority
-fi
-
-# -------------------------------------------------------------------
-# Audio setup — connect to PulseAudio from ES-DE or host
-# -------------------------------------------------------------------
-if [[ -S /run/pulse/native ]]; then
-  export PULSE_SERVER="${PULSE_SERVER:-unix:/run/pulse/native}"
-fi
-
-# -------------------------------------------------------------------
-# Gamepad mapping — use shared DB from ES-DE, fall back to bundled DB
-# -------------------------------------------------------------------
-if [[ -f /run/retrostack-shared/gamecontrollerdb.txt ]]; then
-  export SDL_GAMECONTROLLERCONFIG_FILE=/run/retrostack-shared/gamecontrollerdb.txt
-  log "Using shared gamepad mappings from ES-DE"
-elif [[ -f /usr/local/share/gamecontrollerdb.txt ]]; then
-  export SDL_GAMECONTROLLERCONFIG_FILE=/usr/local/share/gamecontrollerdb.txt
-  log "Using bundled gamepad mappings (standalone mode)"
-fi
-
-# -------------------------------------------------------------------
-# Config directory setup — persistent emulator settings and saves
-# -------------------------------------------------------------------
 EMU_CONFIG_HOME="/config/${EMULATOR_NAME}"
 mkdir -p "${EMU_CONFIG_HOME}"
 
+setup_retroarch_config() {
+  export XDG_CONFIG_HOME="${EMU_CONFIG_HOME}"
+  mkdir -p "${EMU_CONFIG_HOME}/retroarch"/{saves,states,logs,system}
+  [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/retroarch/system/bios" ]] && ln -sf /bios "${EMU_CONFIG_HOME}/retroarch/system/bios"
+  [[ -f "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" ]] && return
+  rs_log "Writing default retroarch.cfg"
+  local core_dir
+  core_dir="$(rs_find_libretro_dir)"
+  cat > "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" <<-CFG
+	libretro_directory = "${core_dir}"
+	video_driver = "gl"
+	audio_driver = "pulse"
+	input_driver = "udev"
+	savefile_directory = "${EMU_CONFIG_HOME}/retroarch/saves"
+	savestate_directory = "${EMU_CONFIG_HOME}/retroarch/states"
+	system_directory = "${EMU_CONFIG_HOME}/retroarch/system"
+	log_dir = "${EMU_CONFIG_HOME}/retroarch/logs"
+	CFG
+}
+
 case "${EMULATOR_NAME}" in
-  retroarch)
-    # RetroArch XDG config paths → /config/retroarch/
-    export XDG_CONFIG_HOME="${EMU_CONFIG_HOME}"
-    mkdir -p "${EMU_CONFIG_HOME}/retroarch/saves" \
-             "${EMU_CONFIG_HOME}/retroarch/states" \
-             "${EMU_CONFIG_HOME}/retroarch/logs" \
-             "${EMU_CONFIG_HOME}/retroarch/system"
-
-    # Symlink system directory to /bios so RetroArch finds BIOS files
-    if [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/retroarch/system/bios" ]]; then
-      ln -sf /bios "${EMU_CONFIG_HOME}/retroarch/system/bios"
-    fi
-
-    # Write default retroarch.cfg if none exists
-    if [[ ! -f "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" ]]; then
-      log "Writing default retroarch.cfg"
-      CORE_DIR=""
-      for d in /usr/lib/libretro /usr/lib/*/libretro; do
-        [[ -d "$d" ]] && CORE_DIR="$d" && break
-      done
-      cat > "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" <<RACFG
-libretro_directory = "${CORE_DIR}"
-video_driver = "gl"
-audio_driver = "pulse"
-input_driver = "udev"
-savefile_directory = "${EMU_CONFIG_HOME}/retroarch/saves"
-savestate_directory = "${EMU_CONFIG_HOME}/retroarch/states"
-system_directory = "${EMU_CONFIG_HOME}/retroarch/system"
-log_dir = "${EMU_CONFIG_HOME}/retroarch/logs"
-RACFG
-    fi
-    ;;
-
+  retroarch)   setup_retroarch_config ;;
   ppsspp)
-    # PPSSPP config → /config/ppsspp/
     export XDG_CONFIG_HOME="${EMU_CONFIG_HOME}"
-    mkdir -p "${EMU_CONFIG_HOME}/ppsspp/PSP/SAVEDATA" \
-             "${EMU_CONFIG_HOME}/ppsspp/PSP/PPSSPP_STATE"
+    mkdir -p "${EMU_CONFIG_HOME}/ppsspp/PSP"/{SAVEDATA,PPSSPP_STATE}
     ;;
-
   dolphin-emu)
-    # Dolphin config → /config/dolphin-emu/
     export XDG_DATA_HOME="${EMU_CONFIG_HOME}"
-    mkdir -p "${EMU_CONFIG_HOME}/dolphin-emu/Config" \
-             "${EMU_CONFIG_HOME}/dolphin-emu/GC" \
-             "${EMU_CONFIG_HOME}/dolphin-emu/Wii" \
-             "${EMU_CONFIG_HOME}/dolphin-emu/StateSaves" \
-             "${EMU_CONFIG_HOME}/dolphin-emu/Dump"
-
-    # Symlink GC BIOS from /bios if available
-    if [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios" ]]; then
-      ln -sf /bios "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios"
-    fi
+    mkdir -p "${EMU_CONFIG_HOME}/dolphin-emu"/{Config,GC,Wii,StateSaves,Dump}
+    [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios" ]] && ln -sf /bios "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios"
     ;;
 esac
 
-# -------------------------------------------------------------------
-# RetroArch core resolution helper
-# -------------------------------------------------------------------
-resolve_retroarch_core() {
-  local core="$1"
-  # Already an absolute path
-  if [[ "${core}" == /* ]]; then
-    echo "${core}"
-    return
-  fi
-  for core_dir in /usr/lib/libretro /usr/lib/*/libretro; do
-    [[ -d "${core_dir}" ]] || continue
-    if [[ -f "${core_dir}/${core}_libretro.so" ]]; then
-      echo "${core_dir}/${core}_libretro.so"
-      return
-    elif [[ -f "${core_dir}/${core}.so" ]]; then
-      echo "${core_dir}/${core}.so"
-      return
-    fi
-  done
-  return 1
-}
-
-# -------------------------------------------------------------------
-# Run the emulator with the given arguments
-# -------------------------------------------------------------------
 run_emulator() {
   local args=("$@")
-
   case "${EMULATOR_NAME}" in
     retroarch)
-      local resolved_args=()
-      local i=0
+      local resolved=() i=0
       while [[ $i -lt ${#args[@]} ]]; do
         case "${args[$i]}" in
           --core|-c)
             i=$((i + 1))
-            local core_path
-            if core_path="$(resolve_retroarch_core "${args[$i]}")"; then
-              resolved_args+=("-L" "${core_path}")
-            else
-              log "ERROR: core '${args[$i]}' not found"
-              return 1
-            fi
+            local p
+            p="$(rs_resolve_core "${args[$i]}")" || rs_die "core '${args[$i]}' not found"
+            resolved+=("-L" "$p")
             ;;
-          *)
-            resolved_args+=("${args[$i]}")
-            ;;
+          *) resolved+=("${args[$i]}") ;;
         esac
         i=$((i + 1))
       done
-      "${EMULATOR_BINARY}" "${resolved_args[@]}"
+      "${EMULATOR_BINARY}" "${resolved[@]}"
       ;;
     dolphin-emu)
-      if [[ -x /usr/bin/dolphin-emu-nogui ]]; then
-        /usr/bin/dolphin-emu-nogui "${args[@]}"
-      else
-        "${EMULATOR_BINARY}" "${args[@]}"
-      fi
-      ;;
-    *)
+      [[ -x /usr/bin/dolphin-emu-nogui ]] && exec /usr/bin/dolphin-emu-nogui "${args[@]}"
       "${EMULATOR_BINARY}" "${args[@]}"
       ;;
+    *) "${EMULATOR_BINARY}" "${args[@]}" ;;
   esac
 }
 
-# -------------------------------------------------------------------
-# Parse arguments
-# -------------------------------------------------------------------
 EXTRA_ARGS=()
-
-usage() {
-  cat <<EOF
-${TAG} Usage:
-  Standalone:  <entrypoint> [--core <core>] [emulator-args...] <rom-path>
-  Daemon:      <entrypoint>  (no arguments — listens on FIFO control pipe)
-
-Environment:
-  EMULATOR_NAME    Emulator identifier (retroarch, ppsspp, dolphin-emu)
-  EMULATOR_BINARY  Path to emulator binary
-  EMULATOR_CORE    Default libretro core (RetroArch only)
-  DISPLAY          X11 display (default: :0)
-
-Examples:
-  # Run a game standalone
-  docker run --rm ... :retroarch --core gambatte /roms/gb/game.gb
-
-  # Daemon mode — ES-DE writes launch commands to the control pipe
-  docker run -d -v emu-ctl:/run/retrostack-emulators ... :retroarch
-EOF
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      EXTRA_ARGS+=("$@")
-      break
-      ;;
-    *)
-      EXTRA_ARGS+=("$1")
-      shift
-      ;;
+      echo "Usage: standalone: <entrypoint> [--core <core>] [args...] <rom>"
+      echo "       daemon:     <entrypoint>  (no args — listens on FIFO)"
+      exit 0 ;;
+    --) shift; EXTRA_ARGS+=("$@"); break ;;
+    *)  EXTRA_ARGS+=("$1"); shift ;;
   esac
 done
 
-# -------------------------------------------------------------------
-# Daemon mode — no args given, listen on FIFO control pipe
-# -------------------------------------------------------------------
 if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
-  CONTROL_DIR="/run/retrostack-emulators"
-  CMD_PIPE="${CONTROL_DIR}/${EMULATOR_NAME}.cmd"
-  STATUS_PIPE="${CONTROL_DIR}/${EMULATOR_NAME}.status"
+  CMD_PIPE="${RETROSTACK_CONTROL_DIR}/${EMULATOR_NAME}.cmd"
+  STATUS_PIPE="${RETROSTACK_CONTROL_DIR}/${EMULATOR_NAME}.status"
 
-  mkdir -p "${CONTROL_DIR}"
+  mkdir -p "${RETROSTACK_CONTROL_DIR}"
   rm -f "${CMD_PIPE}" "${STATUS_PIPE}"
   mkfifo "${CMD_PIPE}" "${STATUS_PIPE}"
   chmod 666 "${CMD_PIPE}" "${STATUS_PIPE}"
 
-  log "Daemon mode — ${EMULATOR_NAME} listening for game launch commands"
+  rs_log "Daemon mode — listening for launch commands"
+  rs_log "Version: $(rs_emulator_version)"
+  [[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Available cores: $(rs_count_cores)"
+  rs_log "Control: ${CMD_PIPE}"
 
-  # Print emulator version
-  VERSION_OUTPUT=""
-  if VERSION_OUTPUT="$(timeout 5 "${EMULATOR_BINARY}" --version 2>&1 | head -n 1)" 2>/dev/null; then
-    log "Version: ${VERSION_OUTPUT}"
-  fi
+  trap 'rs_log "Shutting down."; rm -f "${CMD_PIPE}" "${STATUS_PIPE}"; exit 0' SIGTERM SIGINT
 
-  # RetroArch: list available cores
-  if [[ "${EMULATOR_NAME}" == "retroarch" ]]; then
-    CORE_COUNT=0
-    for core_dir in /usr/lib/libretro /usr/lib/*/libretro; do
-      [[ -d "${core_dir}" ]] || continue
-      for core_file in "${core_dir}"/*.so; do
-        [[ -f "${core_file}" ]] || continue
-        CORE_COUNT=$((CORE_COUNT + 1))
-      done
-    done
-    log "Available libretro cores: ${CORE_COUNT}"
-  fi
-
-  log "Config: ${EMU_CONFIG_HOME}"
-  log "Control pipe: ${CMD_PIPE}"
-  log "Status pipe:  ${STATUS_PIPE}"
-
-  # Signal handler for clean shutdown
-  shutdown() {
-    log "Shutting down."
-    rm -f "${CMD_PIPE}" "${STATUS_PIPE}"
-    exit 0
-  }
-  trap shutdown SIGTERM SIGINT
-
-  # Main loop — read NUL-delimited commands from FIFO and run emulator
   while true; do
-    if read -r CMD_LINE < "${CMD_PIPE}"; then
-      [[ -z "${CMD_LINE}" ]] && continue
-      log "Received launch command: ${CMD_LINE}"
+    read -r CMD_LINE < "${CMD_PIPE}" || continue
+    [[ -z "${CMD_LINE}" ]] && continue
+    rs_log "Launch: ${CMD_LINE}"
 
-      # Parse NUL-delimited args (safe — no shell interpretation)
-      CMD_ARGS=()
-      while IFS= read -r -d '' arg; do
-        CMD_ARGS+=("${arg}")
-      done < <(printf '%s' "${CMD_LINE}" | tr '\x1f' '\0')
+    CMD_ARGS=()
+    while IFS= read -r -d '' arg; do CMD_ARGS+=("${arg}"); done < <(printf '%s' "${CMD_LINE}" | tr '\x1f' '\0')
+    [[ ${#CMD_ARGS[@]} -eq 0 ]] && read -ra CMD_ARGS <<< "${CMD_LINE}"
 
-      # Fallback: if no NUL-delimited args found, split on whitespace
-      # (for backward compat with plain text commands)
-      if [[ ${#CMD_ARGS[@]} -eq 0 ]]; then
-        read -ra CMD_ARGS <<< "${CMD_LINE}"
-      fi
-
-      EXIT_CODE=0
-      run_emulator "${CMD_ARGS[@]}" || EXIT_CODE=$?
-
-      log "Emulator exited with code: ${EXIT_CODE}"
-      echo "${EXIT_CODE}" > "${STATUS_PIPE}"
-    fi
+    EXIT_CODE=0
+    run_emulator "${CMD_ARGS[@]}" || EXIT_CODE=$?
+    rs_log "Exited: ${EXIT_CODE}"
+    echo "${EXIT_CODE}" > "${STATUS_PIPE}"
   done
 fi
 
-# -------------------------------------------------------------------
-# Standalone mode — launch emulator with the given ROM/args
-# -------------------------------------------------------------------
-log "Launching ${EMULATOR_NAME} in standalone mode"
-log "Config: ${EMU_CONFIG_HOME}"
+rs_log "Standalone: ${EMULATOR_NAME}"
 run_emulator "${EXTRA_ARGS[@]}"

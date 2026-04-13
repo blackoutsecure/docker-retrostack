@@ -1,36 +1,27 @@
 # Contributing
 
-Thanks for your interest in contributing!
-
 ## Getting Started
 
-1. Fork the repository and clone your fork.
-2. Create a feature branch: `git checkout -b my-feature`
-3. Make your changes — see the project structure in the [README](README.md).
-4. Test locally: `docker compose --profile all up --build`
-5. Commit with a clear message and open a pull request against `main`.
+1. Fork and clone.
+2. Feature branch: `git checkout -b my-feature`
+3. Test: `docker compose --profile all up --build`
+4. Open a pull request against `main`.
 
 ## Adding a New Emulator
 
-1. Add a `FROM ... AS <name>` stage to the `Dockerfile` (with a builder stage if compiling from source).
+1. Add `FROM ... AS <name>` stage to `Dockerfile` (with builder stage if source-compiled).
 2. Set `ENV EMULATOR_NAME=<name>` and `ENV EMULATOR_BINARY=/path/to/binary`.
-3. `COPY` scripts from `root/usr/local/bin/` and s6 services from `root/etc/s6-overlay/s6-rc.d`.
-4. Add a service in `docker-compose.yml` with the `retrostack-emulator-control` volume and device mounts.
-5. Add matrix entries in the CI workflows (`publish.yml`, `upstream-monitor.yml`).
-6. On the ES-DE side, symlink `retrostack-emulator-launch` as the emulator name.
+3. Add service in `docker-compose.yml` with control volume and device mounts.
+4. Add CI matrix entries in `publish.yml` and `upstream-monitor.yml`.
+5. On ES-DE side, symlink `retrostack-emulator-launch` as the emulator name.
 
-## Guidelines
+## Code Standards
 
-- Keep Dockerfile stages minimal — install only what the emulator needs at runtime.
-- Use multi-stage builds for source-compiled emulators.
-- Run `hadolint Dockerfile` before submitting.
-- Follow existing code style and naming conventions.
-- Scripts live under `root/usr/local/bin/`, s6 services under `root/etc/s6-overlay/s6-rc.d/`.
-
-## Reporting Issues
-
-Open an issue with steps to reproduce, expected behavior, and your environment (OS, Docker version, architecture).
+- Scripts source `retrostack-lib.sh` for shared functions and constants.
+- All scripts include copyright header: `Copyright (c) 2026 Blackout Secure (https://blackoutsecure.app). MIT License.`
+- Keep Dockerfile stages minimal — runtime deps only.
+- Run `hadolint Dockerfile` and `shellcheck root/usr/local/bin/* root/usr/local/lib/*` before submitting.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+Contributions are licensed under the [MIT License](LICENSE).

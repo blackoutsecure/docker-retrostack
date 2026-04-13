@@ -22,7 +22,7 @@ If you discover a security vulnerability, please report it responsibly:
 
 ## Scope
 
-This policy covers the Docker packaging, CI/CD pipelines, and the scripts in `root/usr/local/bin/` (`retrostack-emulator-run`, `retrostack-emulator-launch`, `retrostack-provision`) in this repository. Vulnerabilities in upstream emulators (RetroArch, PPSSPP, Dolphin) should be reported to their respective projects.
+This policy covers the Docker packaging, CI/CD pipelines, and the scripts in `root/usr/local/` (`retrostack-lib.sh`, `retrostack-emulator-run`, `retrostack-emulator-launch`, `retrostack-provision`) in this repository. Vulnerabilities in upstream emulators (RetroArch, PPSSPP, Dolphin) should be reported to their respective projects.
 
 ## Image Updates
 

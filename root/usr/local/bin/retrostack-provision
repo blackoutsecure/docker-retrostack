@@ -1,85 +1,58 @@
 #!/usr/bin/env bash
+# retrostack-provision — Export emulator binary + libs to a shared volume.
+# Copyright (c) 2026 Blackout Secure (https://blackoutsecure.app). MIT License. See LICENSE.
 set -euo pipefail
 
-# retrostack-provision — Copies emulator binary, shared libs, and (for RetroArch)
-# libretro cores onto /export/<name>/ for the ES-DE sidecar pattern.
-#
-# Environment:
-#   EMULATOR_NAME   — required (e.g. "retroarch", "ppsspp", "dolphin-emu")
-#   EMULATOR_BINARY — optional, defaults to /usr/bin/${EMULATOR_NAME}
+# shellcheck source=/dev/null
+source /usr/local/lib/retrostack-lib.sh
 
-TAG="[retrostack-provision:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
-EMULATOR_BINARY="${EMULATOR_BINARY:-/usr/bin/${EMULATOR_NAME}}"
+rs_require_emulator_name
+rs_validate_binary
+
 EXPORT_DIR="/export/${EMULATOR_NAME}"
+SYSTEM_LIBS="^(libc|libm|libdl|librt|libpthread|ld-linux|libgcc_s|libstdc\+\+)"
 
-log() { echo "${TAG} $*"; }
+rs_log "Provisioning from ${EMULATOR_BINARY}"
+mkdir -p "${EXPORT_DIR}"/{bin,lib}
 
-if [[ ! -x "${EMULATOR_BINARY}" ]]; then
-  log "ERROR: binary not found or not executable: ${EMULATOR_BINARY}"
-  exit 1
-fi
-
-log "Provisioning ${EMULATOR_NAME} from ${EMULATOR_BINARY}"
-mkdir -p "${EXPORT_DIR}/bin" "${EXPORT_DIR}/lib"
-
-# Copy binary
 cp -a "${EMULATOR_BINARY}" "${EXPORT_DIR}/bin/${EMULATOR_NAME}"
 chmod 755 "${EXPORT_DIR}/bin/${EMULATOR_NAME}"
-log "Copied binary"
-
-# Copy non-system shared libraries via ldd
-SYSTEM_LIBS_PATTERN="^(libc|libm|libdl|librt|libpthread|ld-linux|libgcc_s|libstdc\+\+)"
 
 copy_libs_for() {
-  local binary="$1"
-  ldd "${binary}" 2>/dev/null | while read -r line; do
-    if [[ "${line}" =~ =\>\ (/[^\ ]+) ]]; then
-      local lib_path="${BASH_REMATCH[1]}"
-      local lib_name
-      lib_name="$(basename "${lib_path}")"
-      [[ "${lib_name}" =~ ${SYSTEM_LIBS_PATTERN} ]] && continue
-      [[ -f "${EXPORT_DIR}/lib/${lib_name}" ]] && continue
-      cp -aL "${lib_path}" "${EXPORT_DIR}/lib/${lib_name}"
-    fi
+  ldd "$1" 2>/dev/null | while read -r line; do
+    [[ "${line}" =~ =\>\ (/[^\ ]+) ]] || continue
+    local lp="${BASH_REMATCH[1]}" ln
+    ln="$(basename "${lp}")"
+    [[ "${ln}" =~ ${SYSTEM_LIBS} || -f "${EXPORT_DIR}/lib/${ln}" ]] && continue
+    cp -aL "${lp}" "${EXPORT_DIR}/lib/${ln}"
   done
 }
 
 copy_libs_for "${EMULATOR_BINARY}"
-log "Copied $(find "${EXPORT_DIR}/lib" -maxdepth 1 -type f | wc -l) shared libraries"
+rs_log "Copied $(find "${EXPORT_DIR}/lib" -maxdepth 1 -type f | wc -l) shared libraries"
 
-# RetroArch: copy libretro cores and default config
 if [[ "${EMULATOR_NAME}" == "retroarch" ]]; then
   mkdir -p "${EXPORT_DIR}/cores"
-  CORE_COUNT=0
-  for core_dir in /usr/lib/libretro /usr/lib/*/libretro; do
-    [[ -d "${core_dir}" ]] || continue
-    for core in "${core_dir}"/*.so; do
-      [[ -f "${core}" ]] || continue
-      cp -a "${core}" "${EXPORT_DIR}/cores/$(basename "${core}")"
-      copy_libs_for "${core}"
-      CORE_COUNT=$((CORE_COUNT + 1))
+  count=0
+  for d in /usr/lib/libretro /usr/lib/*/libretro; do
+    [[ -d "$d" ]] || continue
+    for core in "$d"/*.so; do
+      [[ -f "$core" ]] || continue
+      cp -a "$core" "${EXPORT_DIR}/cores/$(basename "$core")"
+      copy_libs_for "$core"
+      count=$((count + 1))
     done
   done
-  log "Copied ${CORE_COUNT} libretro cores"
-
+  rs_log "Copied ${count} libretro cores"
   printf '%s\n' \
     'libretro_directory = "/emulators/retroarch/cores"' \
     'video_driver = "gl"' \
     'audio_driver = "pulse"' \
     'input_driver = "udev"' \
     > "${EXPORT_DIR}/retroarch.cfg"
-  log "Wrote default retroarch.cfg"
 fi
 
-# Version stamp
-VERSION_OUTPUT=""
-if VERSION_OUTPUT="$(timeout 5 "${EMULATOR_BINARY}" --version 2>&1 | head -n 1)" && [[ -n "${VERSION_OUTPUT}" ]]; then
-  echo "${VERSION_OUTPUT}" > "${EXPORT_DIR}/VERSION"
-  log "Version: ${VERSION_OUTPUT}"
-else
-  echo "unknown" > "${EXPORT_DIR}/VERSION"
-  log "Warning: could not determine version"
-fi
-
-total_size="$(du -sh "${EXPORT_DIR}" | cut -f1)"
-log "Done. Total size: ${total_size}"
+ver="$(rs_emulator_version)"
+echo "${ver:-unknown}" > "${EXPORT_DIR}/VERSION"
+[[ -n "$ver" ]] && rs_log "Version: ${ver}"
+rs_log "Done. Size: $(du -sh "${EXPORT_DIR}" | cut -f1)"

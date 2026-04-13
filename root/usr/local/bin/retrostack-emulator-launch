@@ -1,37 +1,14 @@
 #!/usr/bin/env bash
+# retrostack-emulator-launch — Client-side FIFO launcher for ES-DE integration.
+# Copyright (c) 2026 Blackout Secure (https://blackoutsecure.app). MIT License. See LICENSE.
 set -euo pipefail
 
-# retrostack-emulator-launch — Client-side script for launching games on emulator
-# containers via the FIFO control pipe.
-#
-# This script is designed to be installed in the ES-DE container and called
-# as the emulator command when ES-DE launches a game.
-# It writes the launch command to the emulator container's control pipe and
-# waits for the exit code.
-#
-# The emulator binary never leaves its container.
-#
-# Usage:
-#   retrostack-emulator-launch <emulator-name> [emulator-args...] <rom-path>
-#
-# Symlink shortcut (argv[0] resolution):
-#   ln -s retrostack-emulator-launch /usr/local/bin/retroarch
-#   retroarch -L /usr/lib/libretro/gambatte_libretro.so /roms/gb/game.gb
-#
-# Environment:
-#   RETROSTACK_EMULATORS_CONTROL — control pipe directory (default: /run/retrostack-emulators)
-
 CONTROL_DIR="${RETROSTACK_EMULATORS_CONTROL:-/run/retrostack-emulators}"
-
-# Resolve emulator name from argv[0] (symlink) or first argument
 SCRIPT_NAME="$(basename "$0")"
+
 if [[ "${SCRIPT_NAME}" == "retrostack-emulator-launch" ]]; then
-  if [[ $# -lt 1 ]]; then
-    echo "Usage: retrostack-emulator-launch <emulator-name> [args...] <rom>" >&2
-    exit 1
-  fi
-  EMU_NAME="$1"
-  shift
+  [[ $# -lt 1 ]] && { echo "Usage: retrostack-emulator-launch <emulator> [args...] <rom>" >&2; exit 1; }
+  EMU_NAME="$1"; shift
 else
   EMU_NAME="${SCRIPT_NAME}"
 fi
@@ -39,29 +16,20 @@ fi
 CMD_PIPE="${CONTROL_DIR}/${EMU_NAME}.cmd"
 STATUS_PIPE="${CONTROL_DIR}/${EMU_NAME}.status"
 
-# Validate control pipe exists
 if [[ ! -p "${CMD_PIPE}" ]]; then
-  echo "[retrostack-emulator-launch] ERROR: control pipe not found: ${CMD_PIPE}" >&2
-  echo "[retrostack-emulator-launch] Is the ${EMU_NAME} emulator container running?" >&2
-  echo "[retrostack-emulator-launch] Start it with: docker compose --profile ${EMU_NAME} up -d" >&2
+  echo "[retrostack] ERROR: pipe not found: ${CMD_PIPE}" >&2
+  echo "[retrostack] Is the ${EMU_NAME} container running? Start: docker compose --profile ${EMU_NAME} up -d" >&2
   exit 127
 fi
 
-# Build a unit-separator-delimited command string (safe — no shell parsing)
-# Each argument is joined by ASCII 0x1F (unit separator)
 CMD_LINE=""
 for arg in "$@"; do
-  if [[ -n "${CMD_LINE}" ]]; then
-    CMD_LINE+=$'\x1f'
-  fi
+  [[ -n "${CMD_LINE}" ]] && CMD_LINE+=$'\x1f'
   CMD_LINE+="${arg}"
 done
 
-# Write command to the pipe (blocks until the emulator container reads it)
 echo "${CMD_LINE}" > "${CMD_PIPE}"
 
-# Read exit code from the status pipe (blocks until emulator finishes)
 EXIT_CODE=0
 read -r EXIT_CODE < "${STATUS_PIPE}" || EXIT_CODE=1
-
 exit "${EXIT_CODE}"

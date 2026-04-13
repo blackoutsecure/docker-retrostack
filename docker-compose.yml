@@ -1,15 +1,3 @@
-# RetroStack — emulator runtime containers
-# Run standalone or with optional EmulationStation-DE integration.
-#
-# Profiles — pick the emulators you need:
-#   docker compose --profile retroarch up -d
-#   docker compose --profile ppsspp up -d
-#   docker compose --profile dolphin up -d
-#   docker compose --profile all up -d           # All emulators
-#
-# Build locally:
-#   docker compose --profile all build
-
 x-common: &common
   restart: unless-stopped
   tmpfs:
@@ -35,46 +23,42 @@ x-common: &common
     - /dev/snd:/dev/snd
 
 services:
-  # ── RetroArch ──────────────────────────────────────────────────────
-  # Multi-system emulator via libretro cores.
-  # Best for: NES, SNES, GB/GBC/GBA, Genesis, PCE, and hundreds more.
   retroarch:
     <<: *common
     profiles: [retroarch, all]
     build:
       context: .
       target: retroarch
-      args: {}
+      args:
+        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
       DISPLAY: ${DISPLAY:-:0}
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
-  # ── PPSSPP ─────────────────────────────────────────────────────────
-  # PlayStation Portable emulator (source build).
   ppsspp:
     <<: *common
     profiles: [ppsspp, all]
     build:
       context: .
       target: ppsspp
-      args: {}
+      args:
+        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:ppsspp
     container_name: retrostack-ppsspp
     environment:
       DISPLAY: ${DISPLAY:-:0}
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
-  # ── Dolphin ────────────────────────────────────────────────────────
-  # GameCube / Wii emulator (source build).
   dolphin-emu:
     <<: *common
     profiles: [dolphin, all]
     build:
       context: .
       target: dolphin-emu
-      args: {}
+      args:
+        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:dolphin-emu
     container_name: retrostack-dolphin-emu
     environment:
@@ -82,8 +66,8 @@ services:
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
 volumes:
-  retrostack-emulator-control:     # Shared FIFO control pipes
-  retrostack-shared:               # Shared runtime — gamepad mappings, Xauthority
-  emulationstation-config:   # Persistent emulator config, saves, states
+  retrostack-emulator-control:
+  retrostack-shared:
+  emulationstation-config:
   emulationstation-roms:
   emulationstation-bios:
