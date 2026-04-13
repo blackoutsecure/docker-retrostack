@@ -1,10 +1,14 @@
 name: esde-emulator-provider
 description: >-
   Emulator runtime containers for docker-emulationstation-de.
-  Each container provisions emulator binaries onto a shared volume for
-  ES-DE to discover via esde-emuwrap, then stays alive. Also supports
-  standalone game launch with a ROM argument.
-  Available as individual Balena blocks — compose only the emulators you need.
+  Each container runs a fully installed emulator (RetroArch, PPSSPP, Dolphin)
+  that listens on a FIFO control pipe for game launch commands from ES-DE.
+  Binaries stay inside the container. Available as individual Balena blocks —
+  compose only the emulators you need.
+
+  Docker Hub: blackoutsecure/esde-emulator-provider
+
+  Repository: https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider
 
 version: 1.0.0
 type: sw.block
@@ -36,12 +40,12 @@ post-provisioning: >-
   - **ppsspp** — PPSSPP (PlayStation Portable)
   - **dolphin-emu** — Dolphin (GameCube / Wii)
 
-  ### Usage Modes
+  ### Usage
 
-  - **Standalone**: Pass a ROM path to run a game directly
-  - **Daemon**: Container provisions binaries to shared volume, stays alive;
-    ES-DE discovers and launches emulators via esde-emuwrap
-  - **Provision-only**: Set `EMULATOR_MODE=provision` to provision and exit
+  Pick a profile:
+
+    docker compose --profile retroarch up -d
+    docker compose --profile all up -d
 
   Docker Hub: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
 

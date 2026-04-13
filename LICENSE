@@ -22,13 +22,14 @@ SOFTWARE.
 
 ----------------------------------------------------------------------
 
-Third-Party Software Notices
-============================
+Third-Party Components
+======================
 
-This project packages and distributes the following third-party software.
-Each component retains its original license. The MIT License above applies
-only to the Docker packaging, CI/CD workflows, and provisioning scripts
-(esde-provision) in this repository.
+This project packages and distributes the following third-party software
+and assets, each under its own license. The MIT License above applies only
+to the Docker packaging, CI/CD workflows, and scripts (esde-emulator-run,
+esde-emulator-launch, esde-provision) in this repository.
+
 
 RetroArch
 ---------
@@ -63,3 +64,28 @@ Dolphin Emulator
 
   The full text of the GPL-2.0 license is available at:
     https://www.gnu.org/licenses/gpl-2.0.html
+
+SDL_GameControllerDB — Community Gamepad Mapping Database
+---------------------------------------------------------
+  Source:  https://github.com/gabomdq/SDL_GameControllerDB
+  License: zlib License
+
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+
+  3. This notice may not be removed or altered from any source distribution.

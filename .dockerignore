@@ -1,19 +1,52 @@
+# CI/CD and VCS
 .github/
 .git
+.git/**
 .gitignore
-.editorconfig
+.gitattributes
+.gitmodules
+
+# Documentation
 README*.md
-LICENSE
-docker-compose.yml
 *.md
+
+# Configuration (non-build)
+readme-vars.yml
+.editorconfig
+
+# Environment and secrets
 .env
 .env.*
 !.env.example
+
+# Development and examples
 .devcontainer/
 .vscode/
 .idea/
+
+# Build artifacts
+*.o
+*.so
+*.a
 *.log
+.tmp-config/
+tmp/
+dist/
+build/
+out/
+target/
+coverage/
+.balena-source/
+
+# Dependencies
+node_modules/
+vendor/
+
+# OS and editor files
 *.swp
 *.swo
 *~
 .DS_Store
+
+# Assets (include in image)
+!LICENSE

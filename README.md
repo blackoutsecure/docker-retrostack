@@ -1,47 +1,145 @@
 # docker-emulationstation-de-emulator-provider
 
-[![CI](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml/badge.svg)](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml)
-[![Docker Hub](https://img.shields.io/docker/pulls/blackoutsecure/esde-emulator-provider)](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+[![GitHub Stars](https://img.shields.io/github/stars/blackoutsecure/docker-emulationstation-de-emulator-provider?style=flat-square&logo=github)](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/stargazers)
+[![Docker Pulls](https://img.shields.io/docker/pulls/blackoutsecure/esde-emulator-provider?style=flat-square&logo=docker)](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+[![GitHub Release](https://img.shields.io/github/v/release/blackoutsecure/docker-emulationstation-de-emulator-provider?style=flat-square&logo=github)](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/releases)
+[![Docker CI](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml/badge.svg)](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider/actions/workflows/publish.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Emulator runtime images for [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de). Each image contains a fully installed emulator that can run games directly — either as a standalone container or alongside ES-DE, which auto-discovers the provisioned binaries and launches them when a game is selected with the default emulator.
+Emulator runtime images for [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de). Each image contains a fully installed emulator that runs games directly inside its own container — binaries are never exposed externally. ES-DE triggers game launches via a named pipe (FIFO) on a lightweight shared control volume.
+
+Sponsored and maintained by [Blackout Secure](https://blackoutsecure.app/).
+
+> [!IMPORTANT]
+> This repository provides the **emulator sidecar** containers — not the ES-DE frontend itself.
+> For the frontend, see [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de).
+
+## Overview
+
+Quick links:
+
+- Docker Hub listing: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+- GitHub repository: [blackoutsecure/docker-emulationstation-de-emulator-provider](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider)
+- ES-DE frontend container: [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
+- Balena block metadata: [balena.yml](balena.yml)
+
+## Table of Contents
+
+- [docker-emulationstation-de-emulator-provider](#docker-emulationstation-de-emulator-provider)
+  - [Overview](#overview)
+  - [Table of Contents](#table-of-contents)
+  - [Architecture](#architecture)
+  - [Quick Start](#quick-start)
+  - [Image Availability](#image-availability)
+  - [Supported Architectures](#supported-architectures)
+  - [Emulators](#emulators)
+  - [Usage](#usage)
+    - [Docker Compose (recommended)](#docker-compose-recommended)
+    - [Docker CLI](#docker-cli)
+    - [Balena Deployment](#balena-deployment)
+  - [ES-DE Integration](#es-de-integration)
+  - [Parameters](#parameters)
+    - [Environment Variables](#environment-variables)
+    - [Storage Mounts](#storage-mounts)
+    - [Devices](#devices)
+    - [Runtime Security Defaults](#runtime-security-defaults)
+  - [Configuration](#configuration)
+  - [Adding a New Emulator](#adding-a-new-emulator)
+  - [Build Locally](#build-locally)
+  - [Troubleshooting](#troubleshooting)
+  - [Upstream Monitoring](#upstream-monitoring)
+  - [Release & Versioning](#release--versioning)
+  - [Support & Getting Help](#support--getting-help)
+  - [References](#references)
 
 ## Architecture
 
 ```
-┌──────────────────────────────┐       ┌──────────────────────────┐
-│  emulator-provider           │       │  emulationstation-de     │
-│  (this repo)                 │       │  (separate repo)         │
-│                              │       │                          │
-│  On startup, provisions      │       │  Mounts same volume at   │
-│  binaries + libs to /export/ │──vol──│  /emulators/             │
-│  then stays alive (daemon)   │       │  svc-esde scans for      │
-│  or runs game (standalone)   │       │  /emulators/*/bin/*      │
-│                              │       │  esde-emuwrap exec's the │
-│  Also works standalone:      │       │  emulator with correct   │
-│  docker run ... <rom-path>   │       │  LD_LIBRARY_PATH         │
-└──────────────────────────────┘       └──────────────────────────┘
+┌──────────────────────────────┐                 ┌──────────────────────────┐
+│  emulator-provider           │                 │  emulationstation-de     │
+│  (this repo)                 │                 │  (separate repo)         │
+│                              │                 │                          │
+│  Emulator binary stays here  │  control pipe   │  User selects game       │
+│  Listens on FIFO for launch  │◀────────────────│  esde-emulator-launch    │
+│  commands, runs emulator on  │  /run/esde-emu/ │  writes command to FIFO  │
+│  shared X11 display          │────────────────▶│  reads exit code back    │
+│                              │  exit status    │                          │
+└──────────────────────────────┘                 └──────────────────────────┘
+        │                                                │
+        ├── /dev/dri (GPU)                               ├── /dev/dri (GPU)
+        ├── /dev/input (controllers)                     ├── /dev/input
+        ├── /dev/snd (audio)                             ├── /dev/snd
+        └── X11 socket                                   └── X11 socket
 ```
 
-### Volume Layout (provisioned to shared volume)
+### Control Pipe Protocol
 
+Both containers share a volume at `/run/esde-emulators/`. Each emulator creates:
+
+| File | Direction | Purpose |
+|------|-----------|---------|
+| `<name>.cmd` | ES-DE → Emulator | FIFO — write emulator args (one line, shell-quoted) |
+| `<name>.status` | Emulator → ES-DE | FIFO — read exit code after game finishes |
+
+**No emulator binaries, libraries, or cores leave the emulator container.** Only the control pipes and shared display/GPU/input are exposed.
+
+## Quick Start
+
+Daemon mode — start emulator containers listening for ES-DE launch commands:
+
+```bash
+# Start RetroArch emulator container
+docker compose --profile retroarch up -d
+
+# Start all emulator containers
+docker compose --profile all up -d
 ```
-/export/<emulator-name>/         ← ES-DE mounts at /emulators/<emulator-name>/
-├── bin/<emulator-name>          # Emulator binary
-├── lib/                         # Non-system shared libraries
-├── cores/                       # Libretro cores (RetroArch only)
-├── VERSION                      # Version stamp
-└── retroarch.cfg                # Default config (RetroArch only)
+
+Standalone — run a game directly:
+
+```bash
+docker run --rm \
+  -e DISPLAY=:0 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -v /path/to/roms:/roms:ro \
+  --device=/dev/dri:/dev/dri \
+  --device=/dev/input:/dev/input \
+  --device=/dev/snd:/dev/snd \
+  blackoutsecure/esde-emulator-provider:retroarch \
+  --core gambatte /roms/gb/game.gb
 ```
 
-### Usage Modes
+## Image Availability
 
-| Mode | Description | Command |
-|------|-------------|---------|
-| **Standalone** | Run a game directly, container exits when done | `docker run --rm ... :retroarch --core gambatte /roms/gb/game.gb` |
-| **Daemon** | Container provisions and stays alive; ES-DE uses the provisioned binaries, or use `docker exec` for direct access | `docker run -d ... :retroarch` |
-| **ES-DE Integration** | ES-DE selects game/emulator, `esde-emuwrap` exec's the provisioned binary from the shared volume | Automatic — see [ES-DE integration](#es-de-integration) |
-| **Provision-only** | Copy binaries to shared volume and exit | `docker run -e EMULATOR_MODE=provision ... :retroarch` |
+Docker Hub (Recommended):
+
+- All images are published to [Docker Hub](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+- Simple pull command: `docker pull blackoutsecure/esde-emulator-provider:retroarch`
+- Multi-arch support: amd64, arm64
+- No registry prefix needed when pulling from Docker Hub
+
+```bash
+# Pull RetroArch (default)
+docker pull blackoutsecure/esde-emulator-provider:latest
+docker pull blackoutsecure/esde-emulator-provider:retroarch
+
+# Pull PPSSPP
+docker pull blackoutsecure/esde-emulator-provider:ppsspp
+
+# Pull Dolphin
+docker pull blackoutsecure/esde-emulator-provider:dolphin-emu
+```
+
+## Supported Architectures
+
+This image is published as a multi-arch manifest. Pulling `blackoutsecure/esde-emulator-provider:latest` retrieves the correct image for your host architecture.
+
+The architectures supported by this image are:
+
+| Architecture | Tags |
+|-------------|------|
+| x86-64 | `latest`, `retroarch`, `ppsspp`, `dolphin-emu` |
+| arm64 | `latest`, `retroarch`, `ppsspp`, `dolphin-emu` |
 
 ## Emulators
 
@@ -54,32 +152,54 @@ Emulator runtime images for [docker-emulationstation-de](https://github.com/blac
 
 All images use `ghcr.io/linuxserver/baseimage-ubuntu:noble` as the runtime base (configurable via `BASE_IMAGE*` build args). Versions are tracked automatically by upstream monitor workflows and injected at build time via `--build-arg`.
 
-## Upstream Monitoring
+## Usage
 
-A single [GitHub Actions workflow](.github/workflows/upstream-monitor.yml) monitors all three emulator upstreams every 6 hours:
+### Docker Compose (recommended)
 
-| Emulator | Monitors | Rebuilds |
-|----------|----------|----------|
-| RetroArch | `libretro/RetroArch` releases + PPA version | `retroarch` target |
-| PPSSPP | `hrydgard/ppsspp` releases | `ppsspp` target |
-| Dolphin | `dolphin-emu/dolphin` releases/tags | `dolphin-emu` target |
+Run a single emulator:
 
-Tracked versions are stored in `.github/upstream/*.json` and read by the publish/release workflows.
+```yaml
+---
+services:
+  retroarch:
+    image: blackoutsecure/esde-emulator-provider:retroarch
+    container_name: esde-retroarch
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
+    volumes:
+      - esde-emulator-control:/run/esde-emulators
+      - /path/to/config:/config
+      - /path/to/roms:/roms:ro
+      - /path/to/bios:/bios:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+      - /dev/snd:/dev/snd
+    tmpfs:
+      - /var/tmp
+      - /run:exec
+    shm_size: 1gb
+    restart: unless-stopped
+```
 
-## Prerequisites
-
-- Docker 24+ with BuildKit enabled
-- Docker Compose v2 (for local dev)
-- X11 display server (host or container-internal)
-- GPU passthrough (`/dev/dri`) for hardware-accelerated rendering
-- ~4 GB disk space per emulator target (build stage)
-
-## Quick Start
-
-### Standalone — run a game directly
+Using profiles from the included [docker-compose.yml](docker-compose.yml):
 
 ```bash
-# Run a Game Boy game with RetroArch + gambatte core
+# Start RetroArch only
+docker compose --profile retroarch up -d
+
+# Start all emulators
+docker compose --profile all up -d
+```
+
+### Docker CLI
+
+Standalone game launch (container exits when done):
+
+```bash
+# Game Boy game with RetroArch + gambatte core
 docker run --rm \
   -e DISPLAY=:0 \
   -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
@@ -90,7 +210,7 @@ docker run --rm \
   blackoutsecure/esde-emulator-provider:retroarch \
   --core gambatte /roms/gb/game.gb
 
-# Run a PSP game with PPSSPP
+# PSP game with PPSSPP
 docker run --rm \
   -e DISPLAY=:0 \
   -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
@@ -99,7 +219,7 @@ docker run --rm \
   blackoutsecure/esde-emulator-provider:ppsspp \
   /roms/psp/game.iso
 
-# Run a GameCube game with Dolphin
+# GameCube game with Dolphin
 docker run --rm \
   -e DISPLAY=:0 \
   -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
@@ -109,50 +229,51 @@ docker run --rm \
   /roms/gc/game.iso
 ```
 
-### Daemon mode — keep container alive for ES-DE
+Daemon mode (container stays alive for ES-DE):
 
 ```bash
-# Start emulator containers in daemon mode (auto-provisions to /export/)
-docker compose up -d
-
-# ES-DE integration: ES-DE mounts the same volume at /emulators/
-# and auto-discovers the provisioned binaries via esde-emuwrap.
-
-# Direct access via docker exec also works:
-docker exec esde-retroarch retroarch -L /usr/lib/libretro/gambatte_libretro.so /roms/gb/game.gb
-docker exec esde-ppsspp PPSSPPSDL /roms/psp/game.iso
-docker exec esde-dolphin-emu dolphin-emu-nogui /roms/gc/game.iso
+docker run -d \
+  --name=esde-retroarch \
+  --restart unless-stopped \
+  -e DISPLAY=:0 \
+  -v emu-ctl:/run/esde-emulators \
+  -v /path/to/roms:/roms:ro \
+  -v /path/to/bios:/bios:ro \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  --device=/dev/dri:/dev/dri \
+  --device=/dev/input:/dev/input \
+  --device=/dev/snd:/dev/snd \
+  --shm-size=1gb \
+  blackoutsecure/esde-emulator-provider:retroarch
 ```
 
-### Build from source
+### Balena Deployment
+
+This image can be deployed to Balena-powered devices using the included [docker-compose.yml](docker-compose.yml) file (Balena labels are included and harmlessly ignored by standard Docker).
+
+- Block metadata: [balena.yml](balena.yml)
+- Compose file: [docker-compose.yml](docker-compose.yml)
 
 ```bash
-# Build all emulators
-docker compose build
-
-# Build a single emulator
-docker build --target retroarch -t blackoutsecure/esde-emulator-provider:retroarch .
-
-# Override a tracked version
-docker build --build-arg PPSSPP_VERSION=v1.20.3 --target ppsspp .
+balena push <your-app-slug>
 ```
+
+See [Balena documentation](https://docs.balena.io/) for details.
 
 ## ES-DE Integration
 
-When used with [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de), this container provisions emulator binaries onto a shared Docker volume and stays alive. ES-DE discovers and launches the emulators automatically:
+When used with [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de), both containers share a control volume and the same X11 display. Emulator binaries never leave the emulator container:
 
-1. **Startup**: Emulator container provisions binaries + libs to `/export/<name>/` (shared volume)
-2. **Discovery**: ES-DE's `svc-esde` scans `/emulators/*/` and symlinks each `bin/<name>` via `esde-emuwrap`
-3. **Game launch**: When the user selects a game, ES-DE calls `%EMULATOR_RETROARCH%` (or the appropriate emulator) — `esde-emuwrap` resolves the symlink, sets `LD_LIBRARY_PATH` to the bundled libs, and `exec`s the real binary
-4. **Return**: When the user exits the game, control returns to ES-DE
-
-The emulator runs **inside the ES-DE container's process space** using the provisioned binaries from the shared volume — no `docker exec` is needed for this flow.
+1. **Startup**: Emulator container creates FIFO pipes at `/run/esde-emulators/<name>.cmd` and `.status`
+2. **Discovery**: ES-DE installs `esde-emulator-launch` and symlinks each emulator name to it (e.g. `retroarch → esde-emulator-launch`)
+3. **Game launch**: When the user selects a game, ES-DE calls the symlink. `esde-emulator-launch` writes the args to the `.cmd` pipe, the emulator container reads it and runs the game on the shared display
+4. **Return**: When the game exits, the emulator container writes the exit code to the `.status` pipe. `esde-emulator-launch` reads it and returns, giving control back to ES-DE
 
 ### Combined docker-compose.yml
 
 ```yaml
 volumes:
-  emulationstation-emulators:
+  esde-emulator-control:
 
 services:
   emulationstation:
@@ -168,7 +289,7 @@ services:
       - /path/to/config:/config
       - /path/to/roms:/roms:ro
       - /path/to/bios:/bios:ro
-      - emulationstation-emulators:/emulators
+      - esde-emulator-control:/run/esde-emulators
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
@@ -183,7 +304,7 @@ services:
     environment:
       - DISPLAY=${DISPLAY:-:0}
     volumes:
-      - emulationstation-emulators:/export
+      - esde-emulator-control:/run/esde-emulators
       - /path/to/roms:/roms:ro
       - /path/to/bios:/bios:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
@@ -193,82 +314,192 @@ services:
       - /dev/snd:/dev/snd
     shm_size: 1gb
     restart: unless-stopped
-
-  ppsspp:
-    image: blackoutsecure/esde-emulator-provider:ppsspp
-    container_name: esde-ppsspp
-    environment:
-      - DISPLAY=${DISPLAY:-:0}
-    volumes:
-      - emulationstation-emulators:/export
-      - /path/to/roms:/roms:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
-      - /dev/snd:/dev/snd
-    shm_size: 1gb
-    restart: unless-stopped
 ```
 
-### Startup log output (ES-DE side)
+### ES-DE Side Setup
+
+Install `esde-emulator-launch` in the ES-DE container and create symlinks for each emulator:
+
+```bash
+# Copy the launch script from the emulator-provider image
+docker cp esde-retroarch:/usr/local/bin/esde-emulator-launch /usr/local/bin/
+
+# Create symlinks — ES-DE calls these by name
+ln -sf /usr/local/bin/esde-emulator-launch /usr/local/bin/retroarch
+ln -sf /usr/local/bin/esde-emulator-launch /usr/local/bin/PPSSPPSDL
+ln -sf /usr/local/bin/esde-emulator-launch /usr/local/bin/dolphin-emu
+```
+
+### Startup Log Output
 
 ```
-[svc-esde] Sidecar retroarch detected; linked via esde-emuwrap as /usr/local/bin/retroarch
-[svc-esde]   Version: RetroArch 1.22.2 (Git ...)
-[svc-esde] Found 6 libretro core(s).
+[esde-emulator:retroarch] Daemon mode — retroarch listening for game launch commands
+[esde-emulator:retroarch] Version: RetroArch 1.22.2 (Git ...)
+[esde-emulator:retroarch] Available libretro cores: 6
+[esde-emulator:retroarch] Control pipe: /run/esde-emulators/retroarch.cmd
+[esde-emulator:retroarch] Status pipe:  /run/esde-emulators/retroarch.status
 ```
 
-## Environment Variables
+## Parameters
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `EMULATOR_NAME` | Emulator identifier (set in image) | Per target |
-| `EMULATOR_BINARY` | Path to emulator binary | Per target |
-| `EMULATOR_MODE` | `run` (default) or `provision` (provision-only, exits) | `run` |
-| `EMULATOR_CORE` | Default libretro core for RetroArch | _(none)_ |
-| `DISPLAY` | X11 display | `:0` |
-| `PULSE_SERVER` | PulseAudio server path | _(none)_ |
+### Environment Variables
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `-e EMULATOR_NAME` | Emulator identifier (set in image — `retroarch`, `ppsspp`, `dolphin-emu`) | Set per target |
+| `-e EMULATOR_BINARY` | Path to emulator binary | Set per target |
+| `-e EMULATOR_CORE` | Default libretro core for RetroArch | Optional |
+| `-e DISPLAY=:0` | X11 display | Optional |
+| `-e PULSE_SERVER` | PulseAudio server path | Optional |
+| `-e ESDE_EMULATORS_CONTROL` | Control pipe directory (client-side) | Optional |
+
+### Storage Mounts
+
+| Mount | Description | Required |
+|-------|-------------|----------|
+| `-v /config` | Persistent emulator settings, saves, and states | Recommended |
+| `-v /roms` | ROM library mount | Recommended |
+| `-v /bios` | BIOS files for emulators that need them | Optional |
+| `-v /run/esde-emulators` | FIFO control pipe volume (shared with ES-DE) | Required (daemon) |
+| `-v /run/esde-shared` | Shared runtime — gamepad mappings, Xauthority | Optional |
+| `-v /tmp/.X11-unix:/tmp/.X11-unix:ro` | X11 socket for display | Required |
+
+### Devices
+
+| Device | Description | Required |
+|--------|-------------|----------|
+| `--device=/dev/dri:/dev/dri` | GPU passthrough for Intel/AMD rendering | Optional |
+| `--device=/dev/input:/dev/input` | Gamepad and input passthrough | Optional |
+| `--device=/dev/snd:/dev/snd` | Audio device passthrough | Optional |
+
+### Runtime Security Defaults
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `read_only` | `false` | Keep root filesystem writable for LSIO init ownership setup |
+| `tmpfs /var/tmp /run` | writable | Writable runtime scratch paths |
+| `shm_size` | `1gb` | Shared memory for SDL and rendering stability |
+
+## Configuration
+
+The container stores persistent emulator data under `/config/<emulator-name>/`:
+
+- **`/config`** — Persistent emulator settings, saves, and states. Recommended if you want data to survive restarts.
+- **`/roms`** — Mount your ROM library read-only into the container.
+- **`/bios`** — Supply BIOS files used by emulator backends.
+
+### Best Practices
+
+- Keep `/config` persistent so emulator saves and settings survive container recreation
+- Mount `/roms` and `/bios` read-only unless you have a specific reason to allow writes
+- Use the same ROM and BIOS volume mounts as your ES-DE container
 
 ## Adding a New Emulator
 
-1. Add a `FROM ... AS <name>` stage to the Dockerfile (with a builder stage if compiling from source).
+1. Add a `FROM ... AS <name>` stage to the `Dockerfile` (with a builder stage if compiling from source).
 2. Set `ENV EMULATOR_NAME=<name>`, `ENV EMULATOR_BINARY=/path/to/binary`, and `ENV DISPLAY=:0`.
-3. `COPY esde-provision` and `esde-emulator-run`, set `esde-emulator-run` as `ENTRYPOINT`.
-4. Add a service in `docker-compose.yml` with GPU/input/display mounts.
+3. `COPY` scripts from `root/usr/local/bin/` and s6 services from `root/etc/s6-overlay/s6-rc.d`.
+4. Add a service in `docker-compose.yml` with the control volume and GPU/input/display mounts.
 5. Add a matrix entry in `publish.yml` (docker + manifest jobs) and `upstream-monitor.yml`.
+6. On the ES-DE side, symlink `esde-emulator-launch` as the emulator name.
 
-## Key Files
+## Build Locally
 
-| File | Purpose |
-|------|---------|
-| `Dockerfile` | Multi-stage build — one target per emulator |
-| `esde-emulator-run` | Entrypoint script — auto-provisions to `/export/` if mounted, then standalone launch or daemon mode |
-| `esde-provision` | Provision script — copies binaries + libs + cores to `/export/<name>/` for ES-DE discovery |
-| `docker-compose.yml` | Local dev/testing with display, device passthrough, and shared emulators volume |
+```bash
+# Build all emulators
+docker compose --profile all build
 
-## CI/CD
+# Build a single emulator
+docker build --target retroarch -t blackoutsecure/esde-emulator-provider:retroarch .
+docker build --target ppsspp -t blackoutsecure/esde-emulator-provider:ppsspp .
+docker build --target dolphin-emu -t blackoutsecure/esde-emulator-provider:dolphin-emu .
 
-| Workflow | Purpose |
-|----------|---------|
-| [publish.yml](.github/workflows/publish.yml) | Build + push to Docker Hub on push/dispatch (matrix: target × arch) |
-| [release.yml](.github/workflows/release.yml) | Versioned release tags on GitHub release |
-| [upstream-monitor.yml](.github/workflows/upstream-monitor.yml) | Auto-rebuild on upstream changes (every 6h) |
+# Override a tracked version
+docker build --build-arg PPSSPP_VERSION=v1.20.3 --target ppsspp .
+docker build --build-arg RETROARCH_VERSION=1.22.2 --target retroarch .
+```
 
-## Licenses
+## Troubleshooting
 
-This repo's packaging code is MIT licensed. Emulators retain their original licenses — see [LICENSE](LICENSE) for third-party notices.
+### Emulator not launching
 
-## Contributing
+- Verify the emulator container is running: `docker ps | grep esde-`
+- Check container logs: `docker logs esde-retroarch`
+- Ensure `/dev/dri` is passed through for GPU access
+- Verify `/tmp/.X11-unix` is mounted for X11 display
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+### Control pipe errors
 
-## Security
+- Ensure the `esde-emulator-control` volume is shared between ES-DE and the emulator container
+- Check that the emulator container started successfully and created the FIFO pipes
+- Look for `[esde-emulator-launch] ERROR: control pipe not found` in ES-DE logs
+- Start the emulator container: `docker compose --profile retroarch up -d`
 
-To report a vulnerability, please see [SECURITY.md](SECURITY.md).
+### Audio issues
+
+- Ensure `/dev/snd` is passed through or `PULSE_SERVER` is set
+- PulseAudio socket must be accessible at `/run/pulse/native`
+
+### Input devices not detected
+
+- Ensure the container has access to `/dev/input`
+- Use `privileged: true` for full device access in kiosk/cabinet setups
+
+### Gamepad Mapping
+
+Each emulator image bundles the [SDL_GameControllerDB](https://github.com/gabomdq/SDL_GameControllerDB) community database (~3000 known gamepads). When running with ES-DE, the shared gamepad DB from the ES-DE container takes priority.
+
+Mapping priority (highest first):
+
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 | `SDL_GAMECONTROLLERCONFIG` env var | User manual overrides |
+| 2 | Shared DB from ES-DE (`/run/esde-shared/gamecontrollerdb.txt`) | ES-DE sidecar mappings |
+| 3 | Bundled community `gamecontrollerdb.txt` | ~3000 known gamepads |
+| 4 | SDL2 built-in DB | Major brand controllers (Xbox, PlayStation, Switch) |
+
+If your gamepad isn't recognized:
+
+1. Find your gamepad's SDL2 GUID — run `sdl2-jstest --list` inside the container
+2. Generate a correct mapping at [SDL_GameControllerDB](https://github.com/gabomdq/SDL_GameControllerDB) or [General Arcade Gamepad Tool](https://generalarcade.com/gamepadtool/)
+3. Set the mapping in your compose environment:
+
+```yaml
+environment:
+  SDL_GAMECONTROLLERCONFIG: "03000000790000001100000000000000,DragonRise Generic USB Joystick,a:b2,b:b1,..."
+```
+
+## Upstream Monitoring
+
+A [GitHub Actions workflow](.github/workflows/upstream-monitor.yml) monitors all three emulator upstreams every 6 hours:
+
+| Emulator | Monitors | Rebuilds |
+|----------|----------|----------|
+| RetroArch | `libretro/RetroArch` releases + PPA version | `retroarch` target |
+| PPSSPP | `hrydgard/ppsspp` releases | `ppsspp` target |
+| Dolphin | `dolphin-emu/dolphin` releases/tags | `dolphin-emu` target |
+
+Tracked versions are stored in `.github/upstream/*.json` and read by the publish/release workflows.
+
+## Release & Versioning
+
+- Stable Docker and Balena block publishing is handled by [.github/workflows/publish.yml](.github/workflows/publish.yml)
+- GitHub release publishing is handled by [.github/workflows/release.yml](.github/workflows/release.yml)
+- Upstream emulator release monitoring is handled by [.github/workflows/upstream-monitor.yml](.github/workflows/upstream-monitor.yml)
+
+## Support & Getting Help
+
+- GitHub repository: [blackoutsecure/docker-emulationstation-de-emulator-provider](https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider)
+- Docker Hub image: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+- ES-DE frontend container: [blackoutsecure/docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
 
 ## References
 
 - [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de) — ES-DE frontend container
 - [retroarch.com](https://retroarch.com/) · [ppa:libretro/stable](https://launchpad.net/~libretro/+archive/ubuntu/stable)
 - [ppsspp.org](https://www.ppsspp.org/) · [dolphin-emu.org](https://dolphin-emu.org/)
+- ES-DE: [https://es-de.org](https://es-de.org/)
+- ES-DE source: [https://gitlab.com/es-de/emulationstation-de](https://gitlab.com/es-de/emulationstation-de)
+- ES-DE user guide: [https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md](https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md)
+- LSIO Ubuntu base image: [https://docs.linuxserver.io/images/docker-baseimage-ubuntu/](https://docs.linuxserver.io/images/docker-baseimage-ubuntu/)
+- SDL_GameControllerDB (community gamepad mappings): [https://github.com/gabomdq/SDL_GameControllerDB](https://github.com/gabomdq/SDL_GameControllerDB)

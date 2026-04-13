@@ -1,69 +1,88 @@
-volumes:
-  emulationstation-emulators:
-  emulationstation-roms:
-  emulationstation-bios:
+# Emulator runtime containers for docker-emulationstation-de
+#
+# Profiles — pick the emulators you need:
+#   docker compose --profile retroarch up -d
+#   docker compose --profile ppsspp up -d
+#   docker compose --profile dolphin up -d
+#   docker compose --profile all up -d           # All emulators
+#
+# Build locally:
+#   docker compose --profile all build
+
+x-common: &common
+  restart: unless-stopped
+  tmpfs:
+    - /var/tmp
+    - /run:exec
+  shm_size: 1gb
+  read_only: false
+  labels:
+    io.balena.features.kernel-modules: '1'
+    io.balena.features.firmware: '1'
+    io.balena.features.dbus: '1'
+  volumes:
+    - esde-emulator-control:/run/esde-emulators
+    - esde-shared:/run/esde-shared:ro
+    - emulationstation-config:/config
+    - emulationstation-roms:/roms:ro
+    - emulationstation-bios:/bios:ro
+    - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    - /run/user/${UID:-1000}/pulse:/run/pulse:ro
+  devices:
+    - /dev/dri:/dev/dri
+    - /dev/input:/dev/input
+    - /dev/snd:/dev/snd
 
 services:
+  # ── RetroArch ──────────────────────────────────────────────────────
+  # Multi-system emulator via libretro cores.
+  # Best for: NES, SNES, GB/GBC/GBA, Genesis, PCE, and hundreds more.
   retroarch:
+    <<: *common
+    profiles: [retroarch, all]
     build:
       context: .
       target: retroarch
-    image: blackoutsecure/esde-emulator-provider:retroarch
+      args: {}
+    image: docker.io/blackoutsecure/esde-emulator-provider:retroarch
     container_name: esde-retroarch
     environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
-      - EMULATOR_CORE=${EMULATOR_CORE:-}
-    volumes:
-      - emulationstation-emulators:/export
-      - emulationstation-roms:/roms:ro
-      - emulationstation-bios:/bios:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
-      - /dev/snd:/dev/snd
-    shm_size: 1gb
-    restart: unless-stopped
+      DISPLAY: ${DISPLAY:-:0}
+      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
+  # ── PPSSPP ─────────────────────────────────────────────────────────
+  # PlayStation Portable emulator (source build).
   ppsspp:
+    <<: *common
+    profiles: [ppsspp, all]
     build:
       context: .
       target: ppsspp
-    image: blackoutsecure/esde-emulator-provider:ppsspp
+      args: {}
+    image: docker.io/blackoutsecure/esde-emulator-provider:ppsspp
     container_name: esde-ppsspp
     environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
-    volumes:
-      - emulationstation-emulators:/export
-      - emulationstation-roms:/roms:ro
-      - emulationstation-bios:/bios:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
-      - /dev/snd:/dev/snd
-    shm_size: 1gb
-    restart: unless-stopped
+      DISPLAY: ${DISPLAY:-:0}
+      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
+  # ── Dolphin ────────────────────────────────────────────────────────
+  # GameCube / Wii emulator (source build).
   dolphin-emu:
+    <<: *common
+    profiles: [dolphin, all]
     build:
       context: .
       target: dolphin-emu
-    image: blackoutsecure/esde-emulator-provider:dolphin-emu
+      args: {}
+    image: docker.io/blackoutsecure/esde-emulator-provider:dolphin-emu
     container_name: esde-dolphin-emu
     environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
-    volumes:
-      - emulationstation-emulators:/export
-      - emulationstation-roms:/roms:ro
-      - emulationstation-bios:/bios:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
-      - /dev/snd:/dev/snd
-    shm_size: 1gb
-    restart: unless-stopped
+      DISPLAY: ${DISPLAY:-:0}
+      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
+
+volumes:
+  esde-emulator-control:     # Shared FIFO control pipes
+  esde-shared:               # Shared runtime — gamepad mappings, Xauthority
+  emulationstation-config:   # Persistent emulator config, saves, states
+  emulationstation-roms:
+  emulationstation-bios:

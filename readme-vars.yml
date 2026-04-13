@@ -1,0 +1,63 @@
+# project information
+project_name: esde-emulator-provider
+project_url: "https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
+project_blurb: |
+  Emulator runtime images for [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de).
+  Each image contains a fully installed emulator that runs games directly inside its own container — binaries
+  are never exposed externally. ES-DE triggers game launches via a named pipe (FIFO) on a lightweight shared
+  control volume. Sponsored and maintained by [Blackout Secure](https://blackoutsecure.app/).
+project_lsio_github_repo_url: "https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider"
+project_categories: "Emulation,Games"
+
+# supported architectures
+available_architectures:
+  - {arch: "{{ arch_x86_64 }}", tag: "retroarch-amd64"}
+  - {arch: "{{ arch_arm64 }}", tag: "retroarch-arm64"}
+
+# common parameters
+common_param_env_vars_enabled: true
+param_container_name: "esde-retroarch"
+param_usage_include_vols: true
+param_volumes:
+  - {vol_path: "/config", vol_host_path: "/path/to/config", desc: "Persistent emulator settings, saves, and states"}
+  - {vol_path: "/roms", vol_host_path: "/path/to/roms", desc: "ROM library mount"}
+  - {vol_path: "/bios", vol_host_path: "/path/to/bios", desc: "BIOS files for emulator backends"}
+  - {vol_path: "/run/esde-emulators", vol_host_path: "esde-emulator-control", desc: "FIFO control pipe volume (shared with ES-DE)"}
+  - {vol_path: "/tmp/.X11-unix", vol_host_path: "/tmp/.X11-unix", desc: "Host X11 socket for display"}
+
+param_usage_include_net: false
+param_usage_include_env: true
+param_env_vars:
+  - {env_var: "DISPLAY", env_value: ":0", desc: "X11 display"}
+  - {env_var: "PULSE_SERVER", env_value: "unix:/run/pulse/native", desc: "PulseAudio server path"}
+
+# optional env variables
+opt_param_usage_include_env: true
+opt_param_env_vars:
+  - {env_var: "EMULATOR_CORE", env_value: "", desc: "Default libretro core for RetroArch"}
+  - {env_var: "ESDE_EMULATORS_CONTROL", env_value: "/run/esde-emulators", desc: "Control pipe directory (client-side)"}
+
+# application setup block
+app_setup_block_enabled: true
+app_setup_block: |
+  This image supports two operation modes:
+
+  **Daemon mode (default):** Start the container with no arguments. It creates FIFO control
+  pipes and listens for game launch commands from ES-DE.
+
+  **Standalone mode:** Pass emulator arguments and a ROM path to run a game directly. The
+  container exits when the game exits.
+
+  **Config persistence**: Emulator settings and saves are stored under `/config/<emulator-name>/`.
+
+  **Device passthrough**: Add `/dev/dri`, `/dev/input`, and `/dev/snd` as needed for your hardware.
+
+# read-only support
+readonly_supported: false
+readonly_message: |
+  Read-only root filesystem is not currently supported due to LSIO init system requirements.
+
+# non-root support
+nonroot_supported: true
+nonroot_message: |
+  The container runs the application as the `abc` user via the LinuxServer.io base image conventions.

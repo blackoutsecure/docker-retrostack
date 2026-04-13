@@ -7,8 +7,8 @@ on:
     paths:
       - 'Dockerfile'
       - '.dockerignore'
-      - 'esde-provision'
       - 'esde-emulator-run'
+      - 'esde-emulator-launch'
       - '.github/workflows/publish.yml'
   push:
     branches:
@@ -18,8 +18,8 @@ on:
       - '.dockerignore'
       - 'docker-compose.yml'
       - 'balena.yml'
-      - 'esde-provision'
       - 'esde-emulator-run'
+      - 'esde-emulator-launch'
       - 'README.md'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
@@ -415,13 +415,21 @@ jobs:
           cat > "${DEPLOY_DIR}/docker-compose.yml" <<EOF
           version: '2.4'
           volumes:
-            esde-emulators: {}
+            esde-emulator-control: {}
+            esde-shared: {}
+            emulationstation-config: {}
+            emulationstation-roms: {}
+            emulationstation-bios: {}
           services:
             ${TARGET}:
               image: ${IMAGE_REF}
               volumes:
-                - esde-emulators:/export
-              restart: 'no'
+                - esde-emulator-control:/run/esde-emulators
+                - esde-shared:/run/esde-shared:ro
+                - emulationstation-config:/config
+                - emulationstation-roms:/roms:ro
+                - emulationstation-bios:/bios:ro
+              restart: unless-stopped
           EOF
           # Strip leading whitespace from heredoc
           sed -i 's/^          //' "${DEPLOY_DIR}/docker-compose.yml"
