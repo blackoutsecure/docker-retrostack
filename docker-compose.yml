@@ -1,4 +1,5 @@
-# Emulator runtime containers for docker-emulationstation-de
+# RetroStack — emulator runtime containers
+# Run standalone or with optional EmulationStation-DE integration.
 #
 # Profiles — pick the emulators you need:
 #   docker compose --profile retroarch up -d
@@ -21,8 +22,8 @@ x-common: &common
     io.balena.features.firmware: '1'
     io.balena.features.dbus: '1'
   volumes:
-    - esde-emulator-control:/run/esde-emulators
-    - esde-shared:/run/esde-shared:ro
+    - retrostack-emulator-control:/run/retrostack-emulators
+    - retrostack-shared:/run/retrostack-shared:ro
     - emulationstation-config:/config
     - emulationstation-roms:/roms:ro
     - emulationstation-bios:/bios:ro
@@ -44,8 +45,8 @@ services:
       context: .
       target: retroarch
       args: {}
-    image: docker.io/blackoutsecure/esde-emulator-provider:retroarch
-    container_name: esde-retroarch
+    image: docker.io/blackoutsecure/retrostack:retroarch
+    container_name: retrostack-retroarch
     environment:
       DISPLAY: ${DISPLAY:-:0}
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
@@ -59,8 +60,8 @@ services:
       context: .
       target: ppsspp
       args: {}
-    image: docker.io/blackoutsecure/esde-emulator-provider:ppsspp
-    container_name: esde-ppsspp
+    image: docker.io/blackoutsecure/retrostack:ppsspp
+    container_name: retrostack-ppsspp
     environment:
       DISPLAY: ${DISPLAY:-:0}
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
@@ -74,15 +75,15 @@ services:
       context: .
       target: dolphin-emu
       args: {}
-    image: docker.io/blackoutsecure/esde-emulator-provider:dolphin-emu
-    container_name: esde-dolphin-emu
+    image: docker.io/blackoutsecure/retrostack:dolphin-emu
+    container_name: retrostack-dolphin-emu
     environment:
       DISPLAY: ${DISPLAY:-:0}
       PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
 
 volumes:
-  esde-emulator-control:     # Shared FIFO control pipes
-  esde-shared:               # Shared runtime — gamepad mappings, Xauthority
+  retrostack-emulator-control:     # Shared FIFO control pipes
+  retrostack-shared:               # Shared runtime — gamepad mappings, Xauthority
   emulationstation-config:   # Persistent emulator config, saves, states
   emulationstation-roms:
   emulationstation-bios:

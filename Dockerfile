@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
-# Emulator runtime images for docker-emulationstation-de.
+# RetroStack — modular emulator runtime images.
+# Supports standalone mode and optional EmulationStation-DE integration.
 #
 # Build targets:
 #   retroarch           — RetroArch + libretro cores (multi-system)
@@ -8,9 +9,9 @@
 #   dolphin-emu         — Dolphin (GameCube / Wii, source build)
 #
 # Build examples:
-#   docker build --target retroarch   -t blackoutsecure/esde-emulator-provider:retroarch .
-#   docker build --target ppsspp      -t blackoutsecure/esde-emulator-provider:ppsspp .
-#   docker build --target dolphin-emu -t blackoutsecure/esde-emulator-provider:dolphin-emu .
+#   docker build --target retroarch   -t blackoutsecure/retrostack:retroarch .
+#   docker build --target ppsspp      -t blackoutsecure/retrostack:ppsspp .
+#   docker build --target dolphin-emu -t blackoutsecure/retrostack:dolphin-emu .
 #
 # Architecture:
 #   runtime-base        — shared scripts, s6 services, gamepad DB, volumes
@@ -22,8 +23,9 @@
 #   1) Runs a game directly (standalone mode)
 #   2) Listens on a FIFO control pipe for game launch commands from ES-DE
 #
-# Binaries stay inside this container — ES-DE sends launch commands via
-# a named pipe on a shared control volume (/run/esde-emulators/).
+# Standalone: run a game directly and exit.
+# Service mode: listen on a FIFO control pipe (/run/retrostack-emulators/)
+# for launch commands from ES-DE or any external caller.
 
 # Base image — LinuxServer.io Ubuntu with s6-overlay init system.
 ARG BASE_IMAGE_REGISTRY=ghcr.io
@@ -35,7 +37,7 @@ ARG BASE_IMAGE=${BASE_IMAGE_REGISTRY}/${BASE_IMAGE_NAME}:${BASE_IMAGE_VARIANT}
 ARG RETROARCH_VERSION=1.22.0
 ARG PPSSPP_VERSION=v1.20.3
 ARG DOLPHIN_VERSION=2509
-ARG VCS_URL=https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider
+ARG VCS_URL=https://github.com/blackoutsecure/docker-retrostack
 
 # ============================================================================
 # Stage 0 — Shared runtime base
@@ -57,32 +59,32 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl -fsSL -o /usr/local/share/gamecontrollerdb.txt \
       https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/master/gamecontrollerdb.txt
 
-COPY /root/usr/local/bin/esde-emulator-run   /usr/local/bin/esde-emulator-run
-COPY /root/usr/local/bin/esde-emulator-launch /usr/local/bin/esde-emulator-launch
-COPY /root/usr/local/bin/esde-provision       /usr/local/bin/esde-provision
+COPY /root/usr/local/bin/retrostack-emulator-run   /usr/local/bin/retrostack-emulator-run
+COPY /root/usr/local/bin/retrostack-emulator-launch /usr/local/bin/retrostack-emulator-launch
+COPY /root/usr/local/bin/retrostack-provision       /usr/local/bin/retrostack-provision
 COPY /root/etc/s6-overlay/s6-rc.d            /etc/s6-overlay/s6-rc.d
 
 RUN set -eux; \
   echo "**** set permissions ****"; \
   chown -R root:root /etc/s6-overlay/s6-rc.d; \
-  chmod 755 /etc/s6-overlay/s6-rc.d/svc-esde-emulator \
-            /etc/s6-overlay/s6-rc.d/svc-esde-emulator/dependencies.d; \
+  chmod 755 /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator \
+            /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator/dependencies.d; \
   chmod 755 /etc/s6-overlay/s6-rc.d/user/contents.d; \
-  chmod 644 /etc/s6-overlay/s6-rc.d/svc-esde-emulator/type \
-            /etc/s6-overlay/s6-rc.d/svc-esde-emulator/dependencies.d/init-services \
-            /etc/s6-overlay/s6-rc.d/user/contents.d/svc-esde-emulator; \
-  chmod 755 /etc/s6-overlay/s6-rc.d/svc-esde-emulator/run \
-            /usr/local/bin/esde-emulator-run \
-            /usr/local/bin/esde-emulator-launch \
-            /usr/local/bin/esde-provision
+  chmod 644 /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator/type \
+            /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator/dependencies.d/init-services \
+            /etc/s6-overlay/s6-rc.d/user/contents.d/svc-retrostack-emulator; \
+  chmod 755 /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator/run \
+            /usr/local/bin/retrostack-emulator-run \
+            /usr/local/bin/retrostack-emulator-launch \
+            /usr/local/bin/retrostack-provision
 
-VOLUME /run/esde-emulators
-VOLUME /run/esde-shared
+VOLUME /run/retrostack-emulators
+VOLUME /run/retrostack-shared
 VOLUME /config
 VOLUME /roms
 VOLUME /bios
 
-ENTRYPOINT ["/usr/local/bin/esde-emulator-run"]
+ENTRYPOINT ["/usr/local/bin/retrostack-emulator-run"]
 
 # ============================================================================
 # Stage 1a — PPSSPP builder (from source, runs in parallel with runtime-base)
@@ -160,8 +162,8 @@ RUN echo "**** install RetroArch + libretro cores ****" && \
     echo "**** cleanup ****" && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-LABEL org.opencontainers.image.title="esde-emulator-provider:retroarch" \
-      org.opencontainers.image.description="RetroArch + libretro cores runtime for ES-DE" \
+LABEL org.opencontainers.image.title="retrostack:retroarch" \
+      org.opencontainers.image.description="RetroArch + libretro cores runtime for RetroStack" \
       org.opencontainers.image.url="${VCS_URL}" \
       org.opencontainers.image.source="${VCS_URL}" \
       org.opencontainers.image.licenses="MIT AND GPL-3.0-or-later"
@@ -189,8 +191,8 @@ RUN echo "**** install PPSSPP runtime dependencies ****" && \
 COPY --from=ppsspp-build /tmp/ppsspp/build/PPSSPPSDL /usr/bin/PPSSPPSDL
 COPY --from=ppsspp-build /tmp/ppsspp/build/assets /usr/local/share/ppsspp/assets
 
-LABEL org.opencontainers.image.title="esde-emulator-provider:ppsspp" \
-      org.opencontainers.image.description="PPSSPP (PSP) runtime for ES-DE" \
+LABEL org.opencontainers.image.title="retrostack:ppsspp" \
+      org.opencontainers.image.description="PPSSPP (PSP) runtime for RetroStack" \
       org.opencontainers.image.url="${VCS_URL}" \
       org.opencontainers.image.source="${VCS_URL}" \
       org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later"
@@ -224,8 +226,8 @@ RUN echo "**** install Dolphin runtime dependencies ****" && \
 COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu /usr/bin/dolphin-emu
 COPY --from=dolphin-build /tmp/dolphin/build/Binaries/dolphin-emu-nogui /usr/bin/dolphin-emu-nogui
 
-LABEL org.opencontainers.image.title="esde-emulator-provider:dolphin-emu" \
-      org.opencontainers.image.description="Dolphin (GameCube/Wii) runtime for ES-DE" \
+LABEL org.opencontainers.image.title="retrostack:dolphin-emu" \
+      org.opencontainers.image.description="Dolphin (GameCube/Wii) runtime for RetroStack" \
       org.opencontainers.image.url="${VCS_URL}" \
       org.opencontainers.image.source="${VCS_URL}" \
       org.opencontainers.image.licenses="MIT AND GPL-2.0-or-later"

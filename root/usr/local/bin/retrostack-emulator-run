@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# esde-emulator-run — Entrypoint for emulator containers.
+# retrostack-emulator-run — Entrypoint for RetroStack emulator containers.
 #
 # Modes:
 #   1. Standalone game launch:
@@ -14,20 +14,20 @@ set -euo pipefail
 #
 # Control pipe protocol (daemon mode):
 #   The container creates a named pipe (FIFO) at:
-#     /run/esde-emulators/<emulator-name>.cmd    (commands in)
-#     /run/esde-emulators/<emulator-name>.status  (exit code out)
+#     /run/retrostack-emulators/<emulator-name>.cmd    (commands in)
+#     /run/retrostack-emulators/<emulator-name>.status  (exit code out)
 #
 #   To launch a game, the caller writes a NUL-delimited arg list to .cmd,
 #   then reads the exit code from .status.
 #
 # Shared volumes:
-#   /run/esde-emulators   — control pipes
+#   /run/retrostack-emulators   — control pipes
 #   /roms                 — ROM library (read-only)
 #   /bios                 — BIOS files (read-only)
 #   /config               — emulator config, saves, and states (persistent)
 #   /tmp/.X11-unix        — X11 display socket
 #   /run/pulse            — PulseAudio socket
-#   /run/esde-shared      — shared runtime (gamepad mappings, xauthority)
+#   /run/retrostack-shared      — shared runtime (gamepad mappings, xauthority)
 #
 # Environment:
 #   EMULATOR_NAME   — required (e.g. "retroarch", "ppsspp", "dolphin-emu")
@@ -36,7 +36,7 @@ set -euo pipefail
 #   DISPLAY         — X11 display (default: :0)
 #   PULSE_SERVER    — PulseAudio server (optional)
 
-TAG="[esde-emulator:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
+TAG="[retrostack-emulator:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
 EMULATOR_BINARY="${EMULATOR_BINARY:-/usr/bin/${EMULATOR_NAME}}"
 
 log() { echo "${TAG} $*"; }
@@ -55,8 +55,8 @@ fi
 export DISPLAY="${DISPLAY:-:0}"
 
 # Inherit Xauthority from shared runtime if available
-if [[ -f /run/esde-shared/.Xauthority ]]; then
-  export XAUTHORITY=/run/esde-shared/.Xauthority
+if [[ -f /run/retrostack-shared/.Xauthority ]]; then
+  export XAUTHORITY=/run/retrostack-shared/.Xauthority
 fi
 
 # -------------------------------------------------------------------
@@ -69,8 +69,8 @@ fi
 # -------------------------------------------------------------------
 # Gamepad mapping — use shared DB from ES-DE, fall back to bundled DB
 # -------------------------------------------------------------------
-if [[ -f /run/esde-shared/gamecontrollerdb.txt ]]; then
-  export SDL_GAMECONTROLLERCONFIG_FILE=/run/esde-shared/gamecontrollerdb.txt
+if [[ -f /run/retrostack-shared/gamecontrollerdb.txt ]]; then
+  export SDL_GAMECONTROLLERCONFIG_FILE=/run/retrostack-shared/gamecontrollerdb.txt
   log "Using shared gamepad mappings from ES-DE"
 elif [[ -f /usr/local/share/gamecontrollerdb.txt ]]; then
   export SDL_GAMECONTROLLERCONFIG_FILE=/usr/local/share/gamecontrollerdb.txt
@@ -228,7 +228,7 @@ Examples:
   docker run --rm ... :retroarch --core gambatte /roms/gb/game.gb
 
   # Daemon mode — ES-DE writes launch commands to the control pipe
-  docker run -d -v emu-ctl:/run/esde-emulators ... :retroarch
+  docker run -d -v emu-ctl:/run/retrostack-emulators ... :retroarch
 EOF
 }
 
@@ -254,7 +254,7 @@ done
 # Daemon mode — no args given, listen on FIFO control pipe
 # -------------------------------------------------------------------
 if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
-  CONTROL_DIR="/run/esde-emulators"
+  CONTROL_DIR="/run/retrostack-emulators"
   CMD_PIPE="${CONTROL_DIR}/${EMULATOR_NAME}.cmd"
   STATUS_PIPE="${CONTROL_DIR}/${EMULATOR_NAME}.status"
 

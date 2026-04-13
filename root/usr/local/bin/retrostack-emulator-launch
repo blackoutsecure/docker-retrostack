@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# esde-emulator-launch — Client-side script for launching games on emulator
+# retrostack-emulator-launch — Client-side script for launching games on emulator
 # containers via the FIFO control pipe.
 #
 # This script is designed to be installed in the ES-DE container and called
@@ -12,22 +12,22 @@ set -euo pipefail
 # The emulator binary never leaves its container.
 #
 # Usage:
-#   esde-emulator-launch <emulator-name> [emulator-args...] <rom-path>
+#   retrostack-emulator-launch <emulator-name> [emulator-args...] <rom-path>
 #
 # Symlink shortcut (argv[0] resolution):
-#   ln -s esde-emulator-launch /usr/local/bin/retroarch
+#   ln -s retrostack-emulator-launch /usr/local/bin/retroarch
 #   retroarch -L /usr/lib/libretro/gambatte_libretro.so /roms/gb/game.gb
 #
 # Environment:
-#   ESDE_EMULATORS_CONTROL — control pipe directory (default: /run/esde-emulators)
+#   RETROSTACK_EMULATORS_CONTROL — control pipe directory (default: /run/retrostack-emulators)
 
-CONTROL_DIR="${ESDE_EMULATORS_CONTROL:-/run/esde-emulators}"
+CONTROL_DIR="${RETROSTACK_EMULATORS_CONTROL:-/run/retrostack-emulators}"
 
 # Resolve emulator name from argv[0] (symlink) or first argument
 SCRIPT_NAME="$(basename "$0")"
-if [[ "${SCRIPT_NAME}" == "esde-emulator-launch" ]]; then
+if [[ "${SCRIPT_NAME}" == "retrostack-emulator-launch" ]]; then
   if [[ $# -lt 1 ]]; then
-    echo "Usage: esde-emulator-launch <emulator-name> [args...] <rom>" >&2
+    echo "Usage: retrostack-emulator-launch <emulator-name> [args...] <rom>" >&2
     exit 1
   fi
   EMU_NAME="$1"
@@ -41,9 +41,9 @@ STATUS_PIPE="${CONTROL_DIR}/${EMU_NAME}.status"
 
 # Validate control pipe exists
 if [[ ! -p "${CMD_PIPE}" ]]; then
-  echo "[esde-emulator-launch] ERROR: control pipe not found: ${CMD_PIPE}" >&2
-  echo "[esde-emulator-launch] Is the ${EMU_NAME} emulator container running?" >&2
-  echo "[esde-emulator-launch] Start it with: docker compose --profile ${EMU_NAME} up -d" >&2
+  echo "[retrostack-emulator-launch] ERROR: control pipe not found: ${CMD_PIPE}" >&2
+  echo "[retrostack-emulator-launch] Is the ${EMU_NAME} emulator container running?" >&2
+  echo "[retrostack-emulator-launch] Start it with: docker compose --profile ${EMU_NAME} up -d" >&2
   exit 127
 fi
 

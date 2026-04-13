@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# esde-provision — Copies emulator binary, shared libs, and (for RetroArch)
+# retrostack-provision — Copies emulator binary, shared libs, and (for RetroArch)
 # libretro cores onto /export/<name>/ for the ES-DE sidecar pattern.
 #
 # Environment:
 #   EMULATOR_NAME   — required (e.g. "retroarch", "ppsspp", "dolphin-emu")
 #   EMULATOR_BINARY — optional, defaults to /usr/bin/${EMULATOR_NAME}
 
-TAG="[esde-provision:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
+TAG="[retrostack-provision:${EMULATOR_NAME:?EMULATOR_NAME must be set}]"
 EMULATOR_BINARY="${EMULATOR_BINARY:-/usr/bin/${EMULATOR_NAME}}"
 EXPORT_DIR="/export/${EMULATOR_NAME}"
 

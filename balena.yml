@@ -1,14 +1,15 @@
-name: esde-emulator-provider
+name: retrostack
 description: >-
-  Emulator runtime containers for docker-emulationstation-de.
-  Each container runs a fully installed emulator (RetroArch, PPSSPP, Dolphin)
-  that listens on a FIFO control pipe for game launch commands from ES-DE.
-  Binaries stay inside the container. Available as individual Balena blocks —
-  compose only the emulators you need.
+  RetroStack: a modular Docker platform providing scalable, multi‑emulator
+  support for retro gaming. Run RetroArch, PPSSPP, or Dolphin standalone
+  or as composable services. Features multi-arch images, profile-based
+  emulator selection, persistent config/saves, gamepad auto-detection,
+  and optional EmulationStation-DE integration. Available as individual
+  Balena blocks — compose only the emulators you need.
 
-  Docker Hub: blackoutsecure/esde-emulator-provider
+  Docker Hub: blackoutsecure/retrostack
 
-  Repository: https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider
+  Repository: https://github.com/blackoutsecure/docker-retrostack
 
 version: 1.0.0
 type: sw.block
@@ -17,7 +18,7 @@ assets:
   repository:
     type: blob.asset
     data:
-      url: 'https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider'
+      url: 'https://github.com/blackoutsecure/docker-retrostack'
 
 data:
   defaultDeviceType: raspberrypi4-64
@@ -47,6 +48,6 @@ post-provisioning: >-
     docker compose --profile retroarch up -d
     docker compose --profile all up -d
 
-  Docker Hub: [blackoutsecure/esde-emulator-provider](https://hub.docker.com/r/blackoutsecure/esde-emulator-provider)
+  Docker Hub: [blackoutsecure/retrostack](https://hub.docker.com/r/blackoutsecure/retrostack)
 
-  Repository: https://github.com/blackoutsecure/docker-emulationstation-de-emulator-provider
+  Repository: https://github.com/blackoutsecure/docker-retrostack

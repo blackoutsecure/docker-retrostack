@@ -7,8 +7,8 @@ on:
     paths:
       - 'Dockerfile'
       - '.dockerignore'
-      - 'esde-emulator-run'
-      - 'esde-emulator-launch'
+      - 'retrostack-emulator-run'
+      - 'retrostack-emulator-launch'
       - '.github/workflows/publish.yml'
   push:
     branches:
@@ -18,8 +18,8 @@ on:
       - '.dockerignore'
       - 'docker-compose.yml'
       - 'balena.yml'
-      - 'esde-emulator-run'
-      - 'esde-emulator-launch'
+      - 'retrostack-emulator-run'
+      - 'retrostack-emulator-launch'
       - 'README.md'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
@@ -50,11 +50,11 @@ concurrency:
 env:
   REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
-  IMAGE_NAME: emulationstation-de-emulator-provider
+  IMAGE_NAME: retrostack
   REPO_URL: ${{ github.server_url }}/${{ github.repository }}
   DOCKERFILE_PATH: ./Dockerfile
   BALENA_NAMESPACE: ${{ vars.BALENA_NAMESPACE || secrets.BALENA_USERNAME }}
-  BALENA_BLOCK_PREFIX: emulationstation-de-emulator-provider
+  BALENA_BLOCK_PREFIX: retrostack
 
 jobs:
   # ── Stage 1: Preflight ─────────────────────────────────────────────
@@ -415,8 +415,8 @@ jobs:
           cat > "${DEPLOY_DIR}/docker-compose.yml" <<EOF
           version: '2.4'
           volumes:
-            esde-emulator-control: {}
-            esde-shared: {}
+            retrostack-emulator-control: {}
+            retrostack-shared: {}
             emulationstation-config: {}
             emulationstation-roms: {}
             emulationstation-bios: {}
@@ -424,8 +424,8 @@ jobs:
             ${TARGET}:
               image: ${IMAGE_REF}
               volumes:
-                - esde-emulator-control:/run/esde-emulators
-                - esde-shared:/run/esde-shared:ro
+                - retrostack-emulator-control:/run/retrostack-emulators
+                - retrostack-shared:/run/retrostack-shared:ro
                 - emulationstation-config:/config
                 - emulationstation-roms:/roms:ro
                 - emulationstation-bios:/bios:ro

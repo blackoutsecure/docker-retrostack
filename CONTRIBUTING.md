@@ -15,9 +15,9 @@ Thanks for your interest in contributing!
 1. Add a `FROM ... AS <name>` stage to the `Dockerfile` (with a builder stage if compiling from source).
 2. Set `ENV EMULATOR_NAME=<name>` and `ENV EMULATOR_BINARY=/path/to/binary`.
 3. `COPY` scripts from `root/usr/local/bin/` and s6 services from `root/etc/s6-overlay/s6-rc.d`.
-4. Add a service in `docker-compose.yml` with the `esde-emulator-control` volume and device mounts.
+4. Add a service in `docker-compose.yml` with the `retrostack-emulator-control` volume and device mounts.
 5. Add matrix entries in the CI workflows (`publish.yml`, `upstream-monitor.yml`).
-6. On the ES-DE side, symlink `esde-emulator-launch` as the emulator name.
+6. On the ES-DE side, symlink `retrostack-emulator-launch` as the emulator name.
 
 ## Guidelines
 
