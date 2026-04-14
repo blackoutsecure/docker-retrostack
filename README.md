@@ -22,8 +22,9 @@ Sponsored and maintained by [Blackout Secure](https://blackoutsecure.app/).
 
 This project packages upstream emulators (RetroArch, PPSSPP, Dolphin) into
 ready-to-run container images for cabinets, desktops, HTPCs, and handheld Linux
-systems. Each image runs standalone or listens for launch commands via FIFO
-control pipes — ideal for integration with frontends like EmulationStation-DE.
+systems. Each image launches the emulator's own GUI by default (standalone mode)
+or listens for launch commands via FIFO control pipes when set to daemon mode —
+ideal for integration with frontends like EmulationStation-DE.
 In daemon mode, the container exits automatically after the emulator process
 ends, or after an idle timeout (default 10 minutes, configurable via
 `RETROSTACK_IDLE_TIMEOUT`).
@@ -289,6 +290,7 @@ docker run -d \
   -e DISPLAY=:0 \
   -e PULSE_SERVER=unix:/run/pulse/native \
   -e RETROSTACK_IDLE_TIMEOUT=600 \
+  -e RETROSTACK_FRONTEND_MODE=daemon \
   -v retrostack-emulator-control:/run/retrostack-emulators \
   -v retrostack-shared:/run/retrostack-shared:ro \
   -v emulationstation-config:/config \
@@ -399,6 +401,7 @@ services:
     environment:
       DISPLAY: ':0'
       PULSE_SERVER: 'unix:/run/pulse/native'
+      RETROSTACK_FRONTEND_MODE: 'daemon'
     volumes:
       - retrostack-emulator-control:/run/retrostack-emulators
       - retrostack-shared:/run/retrostack-shared:ro
@@ -467,6 +470,7 @@ If no launch command is received within the idle timeout:
 | `-e PULSE_SERVER` | PulseAudio server path | Optional |
 | `-e RETROSTACK_EMULATORS_CONTROL` | Control pipe directory (client-side) | Optional |
 | `-e RETROSTACK_IDLE_TIMEOUT` | Seconds to wait for a launch command before the container exits (default: `600`, set to `0` to disable) | Optional |
+| `-e RETROSTACK_FRONTEND_MODE` | `standalone` (default) launches the emulator's own GUI; `daemon` listens on FIFO for ES-DE integration | Optional |
 
 ### Storage Mounts
 

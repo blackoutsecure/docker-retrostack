@@ -75,25 +75,29 @@ jobs:
           REPO: ${{ matrix.repo }}
           TRACK_FILE: ${{ matrix.track_file }}
           CHECK_PPA: ${{ matrix.check_ppa }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "${TRACK_FILE}")"
           API="https://api.github.com/repos/${REPO}"
+          AUTH_HEADER="Authorization: Bearer ${GH_TOKEN}"
 
           # Try latest release first, fall back to pre-releases, then version-like tags
-          RELEASE_JSON="$(curl -fsSL "${API}/releases/latest" 2>/dev/null || echo '{}')"
-          TAG="$(echo "${RELEASE_JSON}" | jq -r '.tag_name // empty')"
+          RELEASE_JSON="$(curl -fsSL -H "${AUTH_HEADER}" "${API}/releases/latest" 2>/dev/null || echo '{}')"
+          TAG="$(echo "${RELEASE_JSON}" | jq -r 'if type == "object" then .tag_name // empty else empty end')"
           if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
-            RELEASE_JSON="$(curl -fsSL "${API}/releases?per_page=1" 2>/dev/null || echo '[]')"
-            TAG="$(echo "${RELEASE_JSON}" | jq -r '.[0].tag_name // empty')"
+            RELEASE_JSON="$(curl -fsSL -H "${AUTH_HEADER}" "${API}/releases?per_page=1" 2>/dev/null || echo '[]')"
+            RELEASE_JSON="$(echo "${RELEASE_JSON}" | jq 'if type == "array" then .[0] // {} else {} end')"
+            TAG="$(echo "${RELEASE_JSON}" | jq -r 'if type == "object" then .tag_name // empty else empty end')"
           fi
           if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
-            TAG="$(curl -fsSL "${API}/tags?per_page=100" | jq -r '[.[] | select(.name | test("^v?[0-9]")) | .name] | first // empty')"
+            TAGS_JSON="$(curl -fsSL -H "${AUTH_HEADER}" "${API}/tags?per_page=100" 2>/dev/null || echo '[]')"
+            TAG="$(echo "${TAGS_JSON}" | jq -r 'if type == "array" then [.[] | select(type == "object") | .name // empty | select(test("^v?[0-9]"))] | first // empty else empty end')"
           fi
           [ -z "${TAG}" ] && echo "Failed to resolve tag for ${REPO}" && exit 1
 
-          NAME="$(echo "${RELEASE_JSON}" | jq -r '.name // empty')"
-          DATE="$(echo "${RELEASE_JSON}" | jq -r '.published_at // empty')"
+          NAME="$(echo "${RELEASE_JSON}" | jq -r 'if type == "object" then .name // empty else empty end')"
+          DATE="$(echo "${RELEASE_JSON}" | jq -r 'if type == "object" then .published_at // empty else empty end')"
 
           # Optional PPA version check (RetroArch only)
           PPA_VER=""

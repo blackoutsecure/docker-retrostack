@@ -5,6 +5,11 @@ x-common: &common
     - /run:exec
   shm_size: 1gb
   read_only: false
+  environment: &common-env
+    DISPLAY: ':0'
+    PULSE_SERVER: 'unix:/run/pulse/native'
+    RETROSTACK_IDLE_TIMEOUT: '600'
+    RETROSTACK_FRONTEND_MODE: 'standalone'
   labels:
     io.balena.features.kernel-modules: '1'
     io.balena.features.firmware: '1'
@@ -31,10 +36,6 @@ services:
       target: retroarch
     image: docker.io/blackoutsecure/retrostack:retroarch
     container_name: retrostack-retroarch
-    environment:
-      DISPLAY: ':0'
-      PULSE_SERVER: 'unix:/run/pulse/native'
-      RETROSTACK_IDLE_TIMEOUT: '600'
 
   ppsspp:
     <<: *common
@@ -44,10 +45,6 @@ services:
       target: ppsspp
     image: docker.io/blackoutsecure/retrostack:ppsspp
     container_name: retrostack-ppsspp
-    environment:
-      DISPLAY: ':0'
-      PULSE_SERVER: 'unix:/run/pulse/native'
-      RETROSTACK_IDLE_TIMEOUT: '600'
 
   dolphin-emu:
     <<: *common
@@ -57,16 +54,12 @@ services:
       target: dolphin-emu
     image: docker.io/blackoutsecure/retrostack:dolphin-emu
     container_name: retrostack-dolphin-emu
-    environment:
-      DISPLAY: ':0'
-      PULSE_SERVER: 'unix:/run/pulse/native'
-      RETROSTACK_IDLE_TIMEOUT: '600'
 
 volumes:
   emulationstation-config:
   emulationstation-roms:
   emulationstation-bios:
-  retrostack-emulator-control:   # FIFO control pipes — ES-DE writes launch commands, emulators read them
-  retrostack-shared:             # Shared runtime — gamepad mappings, Xauthority
-  x11-unix:                      # X11 socket shared between ES-DE and emulators
-  pulse-socket:                  # PulseAudio socket shared with emulators
+  retrostack-emulator-control:
+  retrostack-shared:
+  x11-unix:
+  pulse-socket:

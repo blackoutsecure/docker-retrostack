@@ -36,6 +36,8 @@ setup_retroarch_config() {
 	savestate_directory = "${EMU_CONFIG_HOME}/retroarch/states"
 	system_directory = "${EMU_CONFIG_HOME}/retroarch/system"
 	log_dir = "${EMU_CONFIG_HOME}/retroarch/logs"
+	rgui_browser_directory = "/roms"
+	menu_driver = "ozone"
 	CFG
 }
 
@@ -94,6 +96,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 IDLE_TIMEOUT="${RETROSTACK_IDLE_TIMEOUT:-600}"
+FRONTEND_MODE="${RETROSTACK_FRONTEND_MODE:-standalone}"
+
+if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
+  rs_log "Standalone frontend mode — launching ${EMULATOR_NAME}"
+  case "${EMULATOR_NAME}" in
+    retroarch)    exec "${EMULATOR_BINARY}" ;;
+    dolphin-emu)  exec "${EMULATOR_BINARY}" ;;
+    *)            exec "${EMULATOR_BINARY}" ;;
+  esac
+fi
 
 if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   CMD_PIPE="${RETROSTACK_CONTROL_DIR}/${EMULATOR_NAME}.cmd"
