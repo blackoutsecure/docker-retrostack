@@ -96,10 +96,10 @@ if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   mkfifo "${CMD_PIPE}" "${STATUS_PIPE}"
   chmod 666 "${CMD_PIPE}" "${STATUS_PIPE}"
 
-  rs_log "Daemon mode — listening for launch commands"
-  rs_log "Version: $(rs_emulator_version)"
+  rs_log "Daemon mode — version: $(rs_emulator_version)"
   [[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Available cores: $(rs_count_cores)"
-  rs_log "Control: ${CMD_PIPE}"
+  rs_log "Control pipe: ${CMD_PIPE}"
+  rs_log "Ready — waiting for launch commands from frontend (e.g. ES-DE)"
 
   trap 'rs_log "Shutting down."; rm -f "${CMD_PIPE}" "${STATUS_PIPE}"; exit 0' SIGTERM SIGINT
 
