@@ -106,6 +106,7 @@ rs_log "Binary:        ${EMULATOR_BINARY}"
 rs_log "Version:       $(rs_emulator_version)"
 [[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Cores:         $(rs_count_cores)"
 rs_log "Mode:          ${FRONTEND_MODE}"
+rs_log "Idle timeout:  ${IDLE_TIMEOUT}s"
 if [[ "${FRONTEND_MODE}" == "standalone" ]]; then
   rs_log "Internal X:    ${USE_INTERNAL_X}"
 fi
@@ -113,6 +114,7 @@ rs_log "DISPLAY:       ${DISPLAY:-unset}"
 rs_log "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-unset}"
 rs_log "PULSE_SERVER:  ${PULSE_SERVER:-unset}"
 rs_log "Audio output:  ${RETROSTACK_AUDIO_OUTPUT:-auto}"
+[[ -n "${RETROSTACK_AUDIO_SINK:-}" ]] && rs_log "Audio sink:    ${RETROSTACK_AUDIO_SINK}"
 rs_log "Config:        ${EMU_CONFIG_HOME}"
 X11_DISPLAY_NUM="${DISPLAY#:}"
 X11_SOCKET="/tmp/.X11-unix/X${X11_DISPLAY_NUM%%.*}"
@@ -211,16 +213,55 @@ if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   fi
   rs_log "Ready — waiting for launch commands from frontend (e.g. ES-DE)"
 
-  cleanup() { rs_log "Shutting down."; rm -f "${CMD_PIPE}" "${STATUS_PIPE}"; }
+  _COUNTDOWN_PID=""
+  cleanup() {
+    [[ -n "${_COUNTDOWN_PID}" ]] && kill "${_COUNTDOWN_PID}" 2>/dev/null && wait "${_COUNTDOWN_PID}" 2>/dev/null || true
+    _COUNTDOWN_PID=""
+    rs_log "Shutting down."
+    rm -f "${CMD_PIPE}" "${STATUS_PIPE}"
+  }
   trap 'cleanup; exit 0' SIGTERM SIGINT
+
+  # Background countdown logger: logs remaining idle time at intervals
+  _start_countdown() {
+    local total="$1"
+    (
+      local remaining="${total}"
+      # Log interval: every 60s, every 10s in last minute
+      while [[ ${remaining} -gt 0 ]]; do
+        if [[ ${remaining} -le 60 ]]; then
+          local interval=10
+        else
+          local interval=60
+        fi
+        sleep "${interval}" 2>/dev/null || exit 0
+        remaining=$((remaining - interval))
+        if [[ ${remaining} -gt 0 ]]; then
+          echo "[retrostack:${EMULATOR_NAME}] Idle timeout: ${remaining}s remaining"
+        fi
+      done
+    ) &
+    _COUNTDOWN_PID=$!
+  }
+
+  _stop_countdown() {
+    if [[ -n "${_COUNTDOWN_PID}" ]]; then
+      kill "${_COUNTDOWN_PID}" 2>/dev/null && wait "${_COUNTDOWN_PID}" 2>/dev/null || true
+      _COUNTDOWN_PID=""
+    fi
+  }
 
   while true; do
     if [[ "${IDLE_TIMEOUT}" -gt 0 ]]; then
+      _start_countdown "${IDLE_TIMEOUT}"
       if ! timeout "${IDLE_TIMEOUT}" bash -c "read -r CMD_LINE < \"${CMD_PIPE}\" && echo \"\${CMD_LINE}\"" > /tmp/rs_cmd 2>/dev/null; then
+        _stop_countdown
         rs_log "Idle timeout (${IDLE_TIMEOUT}s) reached — no launch commands received. Exiting."
         cleanup
         exit 0
       fi
+      _stop_countdown
+      rs_log "Command received — idle timeout cancelled"
       CMD_LINE="$(cat /tmp/rs_cmd)"
       rm -f /tmp/rs_cmd
     else
