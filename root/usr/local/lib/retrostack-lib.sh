@@ -279,6 +279,20 @@ rs_setup_pulse() {
     }
   fi
 
+  # Point PULSE_SERVER to our own PulseAudio socket.
+  # docker-compose sets PULSE_SERVER=unix:/run/pulse/native for daemon mode
+  # (ES-DE provides the socket), but in standalone mode the volume is empty.
+  # PulseAudio creates its socket at $XDG_RUNTIME_DIR/pulse/native, so we
+  # must update PULSE_SERVER or pactl/RetroArch will fail to connect.
+  local _pa_socket="${XDG_RUNTIME_DIR}/pulse/native"
+  if [[ -S "${_pa_socket}" ]]; then
+    export PULSE_SERVER="unix:${_pa_socket}"
+  else
+    # Fallback: let libpulse auto-discover the socket
+    unset PULSE_SERVER 2>/dev/null || true
+  fi
+  rs_log "PulseAudio running (PULSE_SERVER=${PULSE_SERVER:-<auto>})"
+
   # Fix PulseAudio card profiles for bcm2835
   if ${_bcm2835_loaded}; then
     local _bcm_card_index
@@ -311,13 +325,17 @@ rs_setup_pulse() {
       fi
       sleep 1
     done
-    ${_usb_audio_found} && rs_log "USB audio card(s) detected" || \
-      rs_log "Warning: No USB audio cards found"
+    if ${_usb_audio_found}; then
+      rs_log "USB audio card(s) detected"
+    elif [[ "${_audio_output}" == "usb" ]]; then
+      rs_log "Warning: RETROSTACK_AUDIO_OUTPUT=usb but no USB audio cards found"
+    fi
   fi
 
-  # Wait for a hardware ALSA sink (up to 20s) with priority selection
+  # Wait for a hardware ALSA sink (up to 30s) with priority selection
+  # PulseAudio's module-udev-detect can take time to create sinks from ALSA cards.
   local _hw_sink="" _wait sink_list
-  for _wait in $(seq 1 20); do
+  for _wait in $(seq 1 30); do
     sink_list="$(pactl list short sinks 2>/dev/null)" || true
 
     # Sink selection respects RETROSTACK_AUDIO_OUTPUT preference
@@ -357,11 +375,23 @@ rs_setup_pulse() {
     pactl set-sink-volume "${_hw_sink}" 100% 2>/dev/null || true
     rs_log "Audio sink: ${_hw_sink} (output=${_audio_output})"
   else
-    rs_log "Warning: no ALSA audio sink detected"
-    rs_log "  Ensure /dev/snd is passed through and speakers are connected."
+    # ALSA cards exist but PulseAudio couldn't create a usable sink
+    local _all_sinks
+    _all_sinks="$(pactl list short sinks 2>/dev/null)" || true
+    rs_log "Warning: no usable PulseAudio sink found (output=${_audio_output})"
+    if [[ -n "${_all_sinks}" ]]; then
+      rs_log "  Available sinks (none matched '${_audio_output}'):"
+      while IFS= read -r _s; do
+        rs_log "    ${_s}"
+      done <<< "${_all_sinks}"
+    else
+      rs_log "  PulseAudio found no sinks at all."
+      rs_log "  ALSA cards were detected but PulseAudio could not use them."
+    fi
+    rs_log "  Ensure /dev/snd is passed through and speakers/HDMI display are connected."
     if rs_is_rpi; then
       rs_log "  RPi 3.5mm: set BALENA_HOST_CONFIG_dtparam=\"audio=on\" and reboot."
-      rs_log "  RPi HDMI: set BALENA_HOST_CONFIG_hdmi_drive=2 if no sound."
+      rs_log "  RPi HDMI: set BALENA_HOST_CONFIG_hdmi_drive=2 if no sound over HDMI."
     fi
     return
   fi
