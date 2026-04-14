@@ -50,11 +50,11 @@ concurrency:
 env:
   REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
-  IMAGE_NAME: retrostack
+  IMAGE_NAME: docker-retrostack
   REPO_URL: ${{ github.server_url }}/${{ github.repository }}
   DOCKERFILE_PATH: ./Dockerfile
   BALENA_NAMESPACE: ${{ secrets.BALENA_USERNAME }}
-  BALENA_BLOCK_PREFIX: retrostack
+  BALENA_BLOCK_PREFIX: docker-retrostack
 
 jobs:
   # ── Stage 1: Preflight ─────────────────────────────────────────────

@@ -2,7 +2,7 @@ name: retrostack
 description: >-
   RetroStack: a modular Docker platform providing scalable, multi-emulator
   support for retro gaming. Available as individual Balena blocks.
-  Docker Hub: blackoutsecure/retrostack
+  Docker Hub: blackoutsecure/docker-retrostack
   Repository: https://github.com/blackoutsecure/docker-retrostack
 version: 1.0.0
 type: sw.block
@@ -26,4 +26,4 @@ data:
 post-provisioning: >-
   RetroStack emulator containers. Pick a profile:
   `docker compose --profile retroarch up -d` or `--profile all`.
-  Docker Hub: https://hub.docker.com/r/blackoutsecure/retrostack
+  Docker Hub: https://hub.docker.com/r/blackoutsecure/docker-retrostack

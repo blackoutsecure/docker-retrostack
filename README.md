@@ -5,7 +5,7 @@
 # RetroStack
 
 [![GitHub Stars](https://img.shields.io/github/stars/blackoutsecure/docker-retrostack?style=flat-square&color=E7931D&logo=github)](https://github.com/blackoutsecure/docker-retrostack/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/blackoutsecure/retrostack?style=flat-square&color=E7931D&logo=docker&logoColor=FFFFFF)](https://hub.docker.com/r/blackoutsecure/retrostack)
+[![Docker Pulls](https://img.shields.io/docker/pulls/blackoutsecure/docker-retrostack?style=flat-square&color=E7931D&logo=docker&logoColor=FFFFFF)](https://hub.docker.com/r/blackoutsecure/docker-retrostack)
 [![GitHub Release](https://img.shields.io/github/release/blackoutsecure/docker-retrostack.svg?style=flat-square&color=E7931D&logo=github&logoColor=FFFFFF)](https://github.com/blackoutsecure/docker-retrostack/releases)
 [![Docker CI](https://img.shields.io/github/actions/workflow/status/blackoutsecure/docker-retrostack/publish.yml?style=flat-square&label=docker%20ci&color=E7931D)](https://github.com/blackoutsecure/docker-retrostack/actions/workflows/publish.yml)
 [![License](https://img.shields.io/github/license/blackoutsecure/docker-retrostack?style=flat-square)](LICENSE)
@@ -27,7 +27,7 @@ control pipes — ideal for integration with frontends like EmulationStation-DE.
 
 Quick links:
 
-- Docker Hub listing: [blackoutsecure/retrostack](https://hub.docker.com/r/blackoutsecure/retrostack)
+- Docker Hub listing: [blackoutsecure/docker-retrostack](https://hub.docker.com/r/blackoutsecure/docker-retrostack)
 - GitHub repository: [blackoutsecure/docker-retrostack](https://github.com/blackoutsecure/docker-retrostack)
 - ES-DE frontend container: [docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
 - Balena block metadata: [balena.yml](balena.yml)
@@ -100,7 +100,7 @@ docker run --rm \
   --device=/dev/dri:/dev/dri \
   --device=/dev/input:/dev/input \
   --device=/dev/snd:/dev/snd \
-  blackoutsecure/retrostack:retroarch \
+  blackoutsecure/docker-retrostack:retroarch \
   --core gambatte /roms/gb/game.gb
 ```
 
@@ -122,21 +122,21 @@ For compose examples, device passthrough, Balena deployment, and local build opt
 
 **Docker Hub (Recommended):**
 
-- All images are published to [Docker Hub](https://hub.docker.com/r/blackoutsecure/retrostack)
-- Simple pull command: `docker pull blackoutsecure/retrostack:retroarch`
+- All images are published to [Docker Hub](https://hub.docker.com/r/blackoutsecure/docker-retrostack)
+- Simple pull command: `docker pull blackoutsecure/docker-retrostack:retroarch`
 - Multi-arch support: amd64, arm64
 - No registry prefix needed when pulling from Docker Hub
 
 ```bash
 # Pull RetroArch (default)
-docker pull blackoutsecure/retrostack:latest
-docker pull blackoutsecure/retrostack:retroarch
+docker pull blackoutsecure/docker-retrostack:latest
+docker pull blackoutsecure/docker-retrostack:retroarch
 
 # Pull PPSSPP
-docker pull blackoutsecure/retrostack:ppsspp
+docker pull blackoutsecure/docker-retrostack:ppsspp
 
 # Pull Dolphin
-docker pull blackoutsecure/retrostack:dolphin-emu
+docker pull blackoutsecure/docker-retrostack:dolphin-emu
 ```
 
 ---
@@ -170,7 +170,7 @@ Upstream project details:
 
 ## Supported Architectures
 
-This image is published as a multi-arch manifest. Pulling `blackoutsecure/retrostack:latest` retrieves the correct image for your host architecture.
+This image is published as a multi-arch manifest. Pulling `blackoutsecure/docker-retrostack:latest` retrieves the correct image for your host architecture.
 
 The architectures supported by this image are:
 
@@ -199,7 +199,7 @@ Run a single emulator:
 ---
 services:
   retroarch:
-    image: blackoutsecure/retrostack:retroarch
+    image: blackoutsecure/docker-retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
       - DISPLAY=${DISPLAY:-:0}
@@ -244,7 +244,7 @@ docker run --rm \
   --device=/dev/dri:/dev/dri \
   --device=/dev/input:/dev/input \
   --device=/dev/snd:/dev/snd \
-  blackoutsecure/retrostack:retroarch \
+  blackoutsecure/docker-retrostack:retroarch \
   --core gambatte /roms/gb/game.gb
 
 # PSP game with PPSSPP
@@ -253,7 +253,7 @@ docker run --rm \
   -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
   -v /path/to/roms:/roms:ro \
   --device=/dev/dri:/dev/dri \
-  blackoutsecure/retrostack:ppsspp \
+  blackoutsecure/docker-retrostack:ppsspp \
   /roms/psp/game.iso
 
 # GameCube game with Dolphin
@@ -262,7 +262,7 @@ docker run --rm \
   -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
   -v /path/to/roms:/roms:ro \
   --device=/dev/dri:/dev/dri \
-  blackoutsecure/retrostack:dolphin-emu \
+  blackoutsecure/docker-retrostack:dolphin-emu \
   /roms/gc/game.iso
 ```
 
@@ -281,7 +281,7 @@ docker run -d \
   --device=/dev/input:/dev/input \
   --device=/dev/snd:/dev/snd \
   --shm-size=1gb \
-  blackoutsecure/retrostack:retroarch
+  blackoutsecure/docker-retrostack:retroarch
 ```
 
 ### Balena Deployment
@@ -367,7 +367,7 @@ services:
     restart: unless-stopped
 
   retroarch:
-    image: blackoutsecure/retrostack:retroarch
+    image: blackoutsecure/docker-retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
       - DISPLAY=${DISPLAY:-:0}
@@ -510,9 +510,9 @@ The container stores persistent emulator data under `/config/<emulator-name>/`.
 docker compose --profile all build
 
 # Build a single emulator
-docker build --target retroarch -t blackoutsecure/retrostack:retroarch .
-docker build --target ppsspp -t blackoutsecure/retrostack:ppsspp .
-docker build --target dolphin-emu -t blackoutsecure/retrostack:dolphin-emu .
+docker build --target retroarch -t blackoutsecure/docker-retrostack:retroarch .
+docker build --target ppsspp -t blackoutsecure/docker-retrostack:ppsspp .
+docker build --target dolphin-emu -t blackoutsecure/docker-retrostack:dolphin-emu .
 
 # Override a tracked version
 docker build --build-arg PPSSPP_VERSION=v1.20.3 --target ppsspp .
@@ -646,7 +646,7 @@ Each image includes OCI and RetroStack-specific labels:
 ## Support & Getting Help
 
 - GitHub repository: [blackoutsecure/docker-retrostack](https://github.com/blackoutsecure/docker-retrostack)
-- Docker Hub image: [blackoutsecure/retrostack](https://hub.docker.com/r/blackoutsecure/retrostack)
+- Docker Hub image: [blackoutsecure/docker-retrostack](https://hub.docker.com/r/blackoutsecure/docker-retrostack)
 - ES-DE frontend container: [blackoutsecure/docker-emulationstation-de](https://github.com/blackoutsecure/docker-emulationstation-de)
 
 ---

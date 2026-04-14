@@ -31,7 +31,7 @@ services:
       target: retroarch
       args:
         RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
-    image: docker.io/blackoutsecure/retrostack:retroarch
+    image: docker.io/blackoutsecure/docker-retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
       DISPLAY: ${DISPLAY:-:0}
@@ -45,7 +45,7 @@ services:
       target: ppsspp
       args:
         RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
-    image: docker.io/blackoutsecure/retrostack:ppsspp
+    image: docker.io/blackoutsecure/docker-retrostack:ppsspp
     container_name: retrostack-ppsspp
     environment:
       DISPLAY: ${DISPLAY:-:0}
@@ -59,7 +59,7 @@ services:
       target: dolphin-emu
       args:
         RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
-    image: docker.io/blackoutsecure/retrostack:dolphin-emu
+    image: docker.io/blackoutsecure/docker-retrostack:dolphin-emu
     container_name: retrostack-dolphin-emu
     environment:
       DISPLAY: ${DISPLAY:-:0}
