@@ -14,11 +14,13 @@ common_param_env_vars_enabled: true
 param_container_name: "retrostack-retroarch"
 param_usage_include_vols: true
 param_volumes:
-  - {vol_path: "/config", vol_host_path: "/path/to/config", desc: "Persistent emulator settings, saves, and states"}
-  - {vol_path: "/roms", vol_host_path: "/path/to/roms", desc: "ROM library mount"}
-  - {vol_path: "/bios", vol_host_path: "/path/to/bios", desc: "BIOS files for emulator backends"}
+  - {vol_path: "/config", vol_host_path: "emulationstation-config", desc: "Persistent emulator settings, saves, and states"}
+  - {vol_path: "/roms", vol_host_path: "emulationstation-roms", desc: "ROM library mount"}
+  - {vol_path: "/bios", vol_host_path: "emulationstation-bios", desc: "BIOS files for emulator backends"}
   - {vol_path: "/run/retrostack-emulators", vol_host_path: "retrostack-emulator-control", desc: "FIFO control pipe volume"}
-  - {vol_path: "/tmp/.X11-unix", vol_host_path: "/tmp/.X11-unix", desc: "Host X11 socket"}
+  - {vol_path: "/run/retrostack-shared", vol_host_path: "retrostack-shared", desc: "Shared runtime — gamepad mappings, Xauthority"}
+  - {vol_path: "/tmp/.X11-unix", vol_host_path: "x11-unix", desc: "X11 socket shared between ES-DE and emulators"}
+  - {vol_path: "/run/pulse", vol_host_path: "pulse-socket", desc: "PulseAudio socket shared with emulators"}
 param_usage_include_net: false
 param_usage_include_env: true
 param_env_vars:

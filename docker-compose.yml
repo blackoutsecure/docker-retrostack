@@ -15,8 +15,8 @@ x-common: &common
     - emulationstation-config:/config
     - emulationstation-roms:/roms:ro
     - emulationstation-bios:/bios:ro
-    - /tmp/.X11-unix:/tmp/.X11-unix:ro
-    - /run/user/${UID:-1000}/pulse:/run/pulse:ro
+    - x11-unix:/tmp/.X11-unix:ro
+    - pulse-socket:/run/pulse:ro
   devices:
     - /dev/dri:/dev/dri
     - /dev/input:/dev/input
@@ -29,13 +29,11 @@ services:
     build:
       context: .
       target: retroarch
-      args:
-        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
-      DISPLAY: ${DISPLAY:-:0}
-      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
 
   ppsspp:
     <<: *common
@@ -43,13 +41,11 @@ services:
     build:
       context: .
       target: ppsspp
-      args:
-        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:ppsspp
     container_name: retrostack-ppsspp
     environment:
-      DISPLAY: ${DISPLAY:-:0}
-      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
 
   dolphin-emu:
     <<: *common
@@ -57,17 +53,17 @@ services:
     build:
       context: .
       target: dolphin-emu
-      args:
-        RETROSTACK_VERSION: ${RETROSTACK_VERSION:-1.0.0}
     image: docker.io/blackoutsecure/retrostack:dolphin-emu
     container_name: retrostack-dolphin-emu
     environment:
-      DISPLAY: ${DISPLAY:-:0}
-      PULSE_SERVER: ${PULSE_SERVER:-unix:/run/pulse/native}
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
 
 volumes:
-  retrostack-emulator-control:
-  retrostack-shared:
   emulationstation-config:
   emulationstation-roms:
   emulationstation-bios:
+  retrostack-emulator-control:   # FIFO control pipes — ES-DE writes launch commands, emulators read them
+  retrostack-shared:             # Shared runtime — gamepad mappings, Xauthority
+  x11-unix:                      # X11 socket shared between ES-DE and emulators
+  pulse-socket:                  # PulseAudio socket shared with emulators

@@ -202,14 +202,16 @@ services:
     image: blackoutsecure/retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/pulse/native}
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
     volumes:
       - retrostack-emulator-control:/run/retrostack-emulators
-      - /path/to/config:/config
-      - /path/to/roms:/roms:ro
-      - /path/to/bios:/bios:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - retrostack-shared:/run/retrostack-shared:ro
+      - emulationstation-config:/config
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
+      - x11-unix:/tmp/.X11-unix:ro
+      - pulse-socket:/run/pulse:ro
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
@@ -219,6 +221,15 @@ services:
       - /run:exec
     shm_size: 1gb
     restart: unless-stopped
+
+volumes:
+  emulationstation-config:
+  emulationstation-roms:
+  emulationstation-bios:
+  retrostack-emulator-control:
+  retrostack-shared:
+  x11-unix:
+  pulse-socket:
 ```
 
 Using profiles from the included [docker-compose.yml](docker-compose.yml):
@@ -273,10 +284,14 @@ docker run -d \
   --name=retrostack-retroarch \
   --restart unless-stopped \
   -e DISPLAY=:0 \
-  -v emu-ctl:/run/retrostack-emulators \
-  -v /path/to/roms:/roms:ro \
-  -v /path/to/bios:/bios:ro \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -e PULSE_SERVER=unix:/run/pulse/native \
+  -v retrostack-emulator-control:/run/retrostack-emulators \
+  -v retrostack-shared:/run/retrostack-shared:ro \
+  -v emulationstation-config:/config \
+  -v emulationstation-roms:/roms:ro \
+  -v emulationstation-bios:/bios:ro \
+  -v x11-unix:/tmp/.X11-unix:ro \
+  -v pulse-socket:/run/pulse:ro \
   --device=/dev/dri:/dev/dri \
   --device=/dev/input:/dev/input \
   --device=/dev/snd:/dev/snd \
@@ -341,23 +356,31 @@ Both containers share a volume at `/run/retrostack-emulators/`. Each emulator cr
 
 ```yaml
 volumes:
+  emulationstation-config:
+  emulationstation-roms:
+  emulationstation-bios:
   retrostack-emulator-control:
+  retrostack-shared:
+  x11-unix:
+  pulse-socket:
 
 services:
   emulationstation:
     image: blackoutsecure/emulationstation-de:latest
     container_name: emulationstation
     environment:
-      - TZ=Etc/UTC
-      - DISPLAY_NUM=0
-      - XDG_RUNTIME_DIR=/run/esde
-      - ESDE_USE_INTERNAL_X=1
-      - UDEV=1
+      TZ: 'Etc/UTC'
+      DISPLAY_NUM: '0'
+      XDG_RUNTIME_DIR: '/run/esde'
+      ESDE_USE_INTERNAL_X: '1'
+      UDEV: '1'
     volumes:
-      - /path/to/config:/config
-      - /path/to/roms:/roms:ro
-      - /path/to/bios:/bios:ro
+      - emulationstation-config:/config
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
       - retrostack-emulator-control:/run/retrostack-emulators
+      - x11-unix:/tmp/.X11-unix:ro
+      - pulse-socket:/run/pulse:ro
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
@@ -370,12 +393,15 @@ services:
     image: blackoutsecure/retrostack:retroarch
     container_name: retrostack-retroarch
     environment:
-      - DISPLAY=${DISPLAY:-:0}
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
     volumes:
       - retrostack-emulator-control:/run/retrostack-emulators
-      - /path/to/roms:/roms:ro
-      - /path/to/bios:/bios:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - retrostack-shared:/run/retrostack-shared:ro
+      - emulationstation-roms:/roms:ro
+      - emulationstation-bios:/bios:ro
+      - x11-unix:/tmp/.X11-unix:ro
+      - pulse-socket:/run/pulse:ro
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
@@ -426,12 +452,13 @@ ln -sf /usr/local/bin/retrostack-emulator-launch /usr/local/bin/dolphin-emu
 
 | Mount | Description | Required |
 | :----: | --- | :---: |
-| `-v /config` | Persistent emulator settings, saves, and states | Recommended |
-| `-v /roms` | ROM library mount | Recommended |
-| `-v /bios` | BIOS files for emulators that need them | Optional |
-| `-v /run/retrostack-emulators` | FIFO control pipe volume (shared with ES-DE) | Required (daemon) |
-| `-v /run/retrostack-shared` | Shared runtime — gamepad mappings, Xauthority | Optional |
-| `-v /tmp/.X11-unix:/tmp/.X11-unix:ro` | X11 socket for display | Required |
+| `emulationstation-config:/config` | Persistent emulator settings, saves, and states | Recommended |
+| `emulationstation-roms:/roms:ro` | ROM library mount | Recommended |
+| `emulationstation-bios:/bios:ro` | BIOS files for emulators that need them | Optional |
+| `retrostack-emulator-control:/run/retrostack-emulators` | FIFO control pipe volume (shared with ES-DE) | Required (daemon) |
+| `retrostack-shared:/run/retrostack-shared:ro` | Shared runtime — gamepad mappings, Xauthority | Optional |
+| `x11-unix:/tmp/.X11-unix:ro` | X11 socket for display | Required |
+| `pulse-socket:/run/pulse:ro` | PulseAudio socket | Optional |
 
 ### Devices
 
@@ -459,19 +486,19 @@ The container stores persistent emulator data under `/config/<emulator-name>/`.
 
 - Required: No, but recommended if you want settings and saves to survive restarts
 - Purpose: Stores emulator configuration, save games, save states, and logs
-- Example: `-v /path/to/config:/config` or a named volume mapped to `/config`
+- Example: Named volume `emulationstation-config:/config`
 
 ### `/roms` - Content Library
 
 - Required: Recommended
 - Purpose: Mount your ROM library read-only into the container
-- Example: `-v /path/to/roms:/roms:ro`
+- Example: Named volume `emulationstation-roms:/roms:ro`
 
 ### `/bios` - Emulator Support Files
 
 - Required: Optional
 - Purpose: Supply BIOS files used by emulator backends that need them
-- Example: `-v /path/to/bios:/bios:ro`
+- Example: Named volume `emulationstation-bios:/bios:ro`
 
 ### Best Practices
 

@@ -484,8 +484,8 @@ jobs:
           BLOCK_FLEET="${BALENA_NAMESPACE}/${BALENA_BLOCK_PREFIX}-${{ matrix.target }}"
           echo "block_fleet=${BLOCK_FLEET}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish Balena block (action)
-        if: steps.gate.outputs.skip != 'true' && github.event_name != 'workflow_dispatch'
+      - name: Publish Balena block
+        if: steps.gate.outputs.skip != 'true'
         uses: balena-io/deploy-to-balena-action@master
         with:
           balena_token: ${{ secrets.BALENA_API_TOKEN }}
@@ -494,20 +494,6 @@ jobs:
           layer_cache: false
           debug: false
           source: ${{ steps.prep.outputs.deploy_dir }}
-
-      - name: Install Balena CLI (workflow_dispatch)
-        if: steps.gate.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
-        run: npm install -g balena-cli
-
-      - name: Publish Balena block (CLI, workflow_dispatch)
-        if: steps.gate.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
-        env:
-          BALENA_TOKEN: ${{ secrets.BALENA_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          balena login --token "${BALENA_TOKEN}"
-          echo "Pushing to fleet: ${{ steps.targets.outputs.block_fleet }}"
-          balena push "${{ steps.targets.outputs.block_fleet }}" --source "${{ steps.prep.outputs.deploy_dir }}" --nocache
 
       - name: Log deployment info
         if: steps.gate.outputs.skip != 'true'
