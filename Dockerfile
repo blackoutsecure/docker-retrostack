@@ -38,7 +38,7 @@ RUN set -eux \
        /etc/s6-overlay/s6-rc.d/svc-retrostack-emulator/dependencies.d/init-services \
        /etc/s6-overlay/s6-rc.d/user/contents.d/svc-retrostack-emulator
 VOLUME /run/retrostack-emulators /run/retrostack-shared /config /roms /bios
-ENTRYPOINT ["/usr/local/bin/retrostack-emulator-run"]
+ENTRYPOINT ["/init"]
 
 # --- ppsspp-build ---
 FROM ubuntu:noble AS ppsspp-build
