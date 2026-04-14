@@ -18,8 +18,12 @@ mkdir -p "${EMU_CONFIG_HOME}"
 setup_retroarch_config() {
   export XDG_CONFIG_HOME="${EMU_CONFIG_HOME}"
   mkdir -p "${EMU_CONFIG_HOME}/retroarch"/{saves,states,logs,system}
-  [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/retroarch/system/bios" ]] && ln -sf /bios "${EMU_CONFIG_HOME}/retroarch/system/bios"
-  [[ -f "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" ]] && return
+  if [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/retroarch/system/bios" ]]; then
+    ln -sf /bios "${EMU_CONFIG_HOME}/retroarch/system/bios"
+  fi
+  if [[ -f "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" ]]; then
+    return
+  fi
   rs_log "Writing default retroarch.cfg"
   local core_dir
   core_dir="$(rs_find_libretro_dir)"
@@ -44,7 +48,9 @@ case "${EMULATOR_NAME}" in
   dolphin-emu)
     export XDG_DATA_HOME="${EMU_CONFIG_HOME}"
     mkdir -p "${EMU_CONFIG_HOME}/dolphin-emu"/{Config,GC,Wii,StateSaves,Dump}
-    [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios" ]] && ln -sf /bios "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios"
+    if [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios" ]]; then
+      ln -sf /bios "${EMU_CONFIG_HOME}/dolphin-emu/GC/bios"
+    fi
     ;;
 esac
 

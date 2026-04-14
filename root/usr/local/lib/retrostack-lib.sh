@@ -28,11 +28,15 @@ rs_validate_binary() {
 
 rs_setup_display() {
   export DISPLAY="${DISPLAY:-:0}"
-  [[ -f "${RETROSTACK_SHARED_DIR}/.Xauthority" ]] && export XAUTHORITY="${RETROSTACK_SHARED_DIR}/.Xauthority"
+  if [[ -f "${RETROSTACK_SHARED_DIR}/.Xauthority" ]]; then
+    export XAUTHORITY="${RETROSTACK_SHARED_DIR}/.Xauthority"
+  fi
 }
 
 rs_setup_audio() {
-  [[ -S /run/pulse/native ]] && export PULSE_SERVER="${PULSE_SERVER:-unix:/run/pulse/native}"
+  if [[ -S /run/pulse/native ]]; then
+    export PULSE_SERVER="${PULSE_SERVER:-unix:/run/pulse/native}"
+  fi
 }
 
 rs_setup_gamepad() {

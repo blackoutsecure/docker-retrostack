@@ -1,4 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+# Redirect stdout/stderr to the container's stdout so output appears in docker logs.
+exec > /proc/1/fd/1 2>&1
 exec /usr/local/bin/retrostack-emulator-run
