@@ -23,7 +23,7 @@ x-common: &common
   privileged: true
   volumes:
     - retrostack-config:/config
-    - retrostack-roms:/roms:ro
+    - retrostack-roms:/roms
     - retrostack-bios:/bios:ro
     - pulse-socket:/run/pulse:ro
   devices:

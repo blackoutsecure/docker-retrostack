@@ -36,6 +36,7 @@ setup_retroarch_config() {
 	savestate_directory = "${EMU_CONFIG_HOME}/retroarch/states"
 	system_directory = "${EMU_CONFIG_HOME}/retroarch/system"
 	log_dir = "${EMU_CONFIG_HOME}/retroarch/logs"
+	log_verbosity = "true"
 	rgui_browser_directory = "/roms"
 	menu_driver = "ozone"
 	CFG
@@ -60,7 +61,7 @@ run_emulator() {
   local args=("$@")
   case "${EMULATOR_NAME}" in
     retroarch)
-      local resolved=() i=0
+      local resolved=("--verbose") i=0
       while [[ $i -lt ${#args[@]} ]]; do
         case "${args[$i]}" in
           --core|-c)
@@ -73,13 +74,16 @@ run_emulator() {
         esac
         i=$((i + 1))
       done
-      "${EMULATOR_BINARY}" "${resolved[@]}"
+      "${EMULATOR_BINARY}" "${resolved[@]}" 2>&1
       ;;
     dolphin-emu)
-      [[ -x /usr/bin/dolphin-emu-nogui ]] && exec /usr/bin/dolphin-emu-nogui "${args[@]}"
-      "${EMULATOR_BINARY}" "${args[@]}"
+      if [[ -x /usr/bin/dolphin-emu-nogui ]]; then
+        /usr/bin/dolphin-emu-nogui "${args[@]}" 2>&1
+      else
+        "${EMULATOR_BINARY}" "${args[@]}" 2>&1
+      fi
       ;;
-    *) "${EMULATOR_BINARY}" "${args[@]}" ;;
+    *) "${EMULATOR_BINARY}" "${args[@]}" 2>&1 ;;
   esac
 }
 
@@ -134,8 +138,11 @@ if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   if [[ -d /defaults/roms ]]; then
     rom_count="$(find /roms -mindepth 1 -maxdepth 2 -type f 2>/dev/null | wc -l)"
     if [[ "${rom_count}" -eq 0 ]]; then
-      cp -rn /defaults/roms/* /roms/ 2>/dev/null || true
-      rs_log "Seeded demo ROMs into /roms"
+      if cp -rn /defaults/roms/* /roms/ 2>&1; then
+        rs_log "Seeded demo ROMs into /roms"
+      else
+        rs_log "WARNING: Failed to seed demo ROMs into /roms — is the volume mounted read-only?"
+      fi
     fi
   fi
 
@@ -185,7 +192,7 @@ if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   echo $(( FAIL_COUNT + 1 )) > "${FAIL_STAMP}"
 
   EXIT_CODE=0
-  "${EMULATOR_BINARY}" || EXIT_CODE=$?
+  run_emulator || EXIT_CODE=$?
 
   if [[ ${EXIT_CODE} -eq 0 ]]; then
     rm -f "${FAIL_STAMP}"

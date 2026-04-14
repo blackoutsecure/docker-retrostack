@@ -106,6 +106,14 @@ docker run --rm \
   --core gambatte /roms/gb/game.gb
 ```
 
+**Try instantly — no ROMs needed (uses the bundled demo ROM):**
+
+```bash
+docker compose --profile retroarch up -d
+```
+
+The image ships with a free, open-source demo ROM ([Libbet and the Magic Floor](https://github.com/pinobatch/libbet)) that is automatically seeded into `/roms` on first boot when the volume is empty and writable. If you supply your own ROMs, seeding is skipped entirely and `/roms` can be mounted read-only.
+
 **Service mode — start emulator containers using profiles:**
 
 ```bash
@@ -197,6 +205,8 @@ The architectures supported by this image are:
 
 Run a single emulator:
 
+**Standalone mode** (default — emulator launches its own GUI, seeds bundled demo ROM on first boot):
+
 ```yaml
 ---
 services:
@@ -208,7 +218,7 @@ services:
       PULSE_SERVER: 'unix:/run/pulse/native'
     volumes:
       - retrostack-config:/config
-      - retrostack-roms:/roms:ro
+      - retrostack-roms:/roms          # writable so demo ROM can be seeded
       - retrostack-bios:/bios:ro
       - pulse-socket:/run/pulse:ro
     devices:
@@ -226,6 +236,47 @@ volumes:
   retrostack-config:
   retrostack-roms:
   retrostack-bios:
+  pulse-socket:
+```
+
+> **Tip:** If you provide your own ROMs, you can mount `/roms` read-only
+> (`retrostack-roms:/roms:ro`). Demo ROM seeding is only attempted when the
+> volume is empty, so `:ro` with existing content works without errors.
+
+**Daemon / integration mode** (ES-DE or another frontend controls the emulator — ROMs are read-only):
+
+```yaml
+---
+services:
+  retroarch:
+    image: blackoutsecure/retrostack:retroarch
+    container_name: retrostack-retroarch
+    environment:
+      DISPLAY: ':0'
+      PULSE_SERVER: 'unix:/run/pulse/native'
+      RETROSTACK_FRONTEND_MODE: 'daemon'
+    volumes:
+      - retrostack-config:/config
+      - retrostack-roms:/roms:ro       # read-only — frontend owns the ROMs
+      - retrostack-bios:/bios:ro
+      - retrostack-emulator-control:/run/retrostack-emulators
+      - pulse-socket:/run/pulse:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/input:/dev/input
+      - /dev/snd:/dev/snd
+    privileged: true
+    tmpfs:
+      - /var/tmp
+      - /run:exec
+    shm_size: 1gb
+    restart: unless-stopped
+
+volumes:
+  retrostack-config:
+  retrostack-roms:
+  retrostack-bios:
+  retrostack-emulator-control:
   pulse-socket:
 ```
 
@@ -472,7 +523,7 @@ If no launch command is received within the idle timeout:
 | Mount | Description | Required |
 | :----: | --- | :---: |
 | `retrostack-config:/config` | Persistent emulator settings, saves, and states | Recommended |
-| `retrostack-roms:/roms:ro` | ROM library mount | Recommended |
+| `retrostack-roms:/roms` | ROM library — writable by default for demo ROM seeding on first boot; can use `:ro` if you supply your own ROMs or in daemon/integration mode | Recommended |
 | `retrostack-bios:/bios:ro` | BIOS files for emulators that need them | Optional |
 | `pulse-socket:/run/pulse:ro` | PulseAudio socket | Optional |
 | `/tmp/.X11-unix:/tmp/.X11-unix:ro` | X11 socket (only when `RETROSTACK_USE_INTERNAL_X=0`) | Conditional |
@@ -510,8 +561,9 @@ The container stores persistent emulator data under `/config/<emulator-name>/`.
 ### `/roms` - Content Library
 
 - Required: Recommended
-- Purpose: Mount your ROM library read-only into the container
-- Example: Named volume `retrostack-roms:/roms:ro`
+- Purpose: ROM library for the emulator to browse and play
+- Default (writable): On first boot, if the volume is empty, the bundled demo ROM ([Libbet and the Magic Floor](https://github.com/pinobatch/libbet)) is automatically seeded so you can start playing immediately
+- Read-only (`:ro`): Safe to use when you supply your own ROMs — seeding is skipped when content already exists. Also recommended for daemon/integration mode where the frontend (e.g. ES-DE) owns the ROM library
 
 ### `/bios` - Emulator Support Files
 
@@ -522,7 +574,9 @@ The container stores persistent emulator data under `/config/<emulator-name>/`.
 ### Best Practices
 
 - Keep `/config` persistent so emulator saves and settings survive container recreation
-- Mount `/roms` and `/bios` read-only unless you have a specific reason to allow writes
+- Leave `/roms` **writable** for the default out-of-box experience — the bundled demo ROM is seeded on first boot when the volume is empty
+- Mount `/roms` **read-only** (`:ro`) if you supply your own ROMs or in daemon/integration mode — seeding is safely skipped when content already exists
+- Mount `/bios` read-only unless you have a specific reason to allow writes
 - Use the same ROM and BIOS volume mounts as your ES-DE container when using ES-DE integration
 
 ---
