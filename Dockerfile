@@ -21,7 +21,7 @@ RUN set -eux \
   && cp /tmp/retrostack-root/usr/local/bin/retrostack-emulator-run /usr/local/bin/retrostack-emulator-run \
   && cp /tmp/retrostack-root/usr/local/bin/retrostack-emulator-launch /usr/local/bin/retrostack-emulator-launch \
   && cp /tmp/retrostack-root/usr/local/bin/retrostack-provision /usr/local/bin/retrostack-provision \
-  && cp -r /tmp/retrostack-root/etc/s6-overlay/s6-rc.d /etc/s6-overlay/s6-rc.d \
+  && cp -r /tmp/retrostack-root/etc/s6-overlay/s6-rc.d/ /etc/s6-overlay/s6-rc.d/ \
   && rm -rf /tmp/retrostack-root \
   && chown -R root:root /etc/s6-overlay/s6-rc.d \
   && chmod 755 \
