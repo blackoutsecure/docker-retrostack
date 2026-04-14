@@ -112,6 +112,7 @@ fi
 rs_log "DISPLAY:       ${DISPLAY:-unset}"
 rs_log "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-unset}"
 rs_log "PULSE_SERVER:  ${PULSE_SERVER:-unset}"
+rs_log "Audio output:  ${RETROSTACK_AUDIO_OUTPUT:-auto}"
 rs_log "Config:        ${EMU_CONFIG_HOME}"
 X11_DISPLAY_NUM="${DISPLAY#:}"
 X11_SOCKET="/tmp/.X11-unix/X${X11_DISPLAY_NUM%%.*}"

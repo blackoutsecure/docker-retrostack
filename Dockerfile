@@ -22,7 +22,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
        xserver-xorg-core xserver-xorg-input-libinput \
        xserver-xorg-video-dummy xinit x11-xserver-utils \
-       pulseaudio udev \
+       pulseaudio alsa-utils udev kmod \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY root/ /tmp/retrostack-root/
 COPY VERSION /etc/retrostack-version

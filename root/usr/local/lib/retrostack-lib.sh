@@ -30,6 +30,7 @@ rs_setup_display() {
   export DISPLAY="${DISPLAY:-:0}"
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/retrostack}"
   mkdir -p "${XDG_RUNTIME_DIR}"
+  chmod 700 "${XDG_RUNTIME_DIR}"
   if [[ -f "${RETROSTACK_SHARED_DIR}/.Xauthority" ]]; then
     export XAUTHORITY="${RETROSTACK_SHARED_DIR}/.Xauthority"
   fi
@@ -39,6 +40,18 @@ rs_setup_audio() {
   if [[ -S /run/pulse/native ]]; then
     export PULSE_SERVER="${PULSE_SERVER:-unix:/run/pulse/native}"
   fi
+}
+
+# --- Raspberry Pi detection ---
+rs_is_rpi() {
+  if [[ -e /proc/device-tree/model ]]; then
+    local model
+    model="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)" || true
+    [[ "${model}" == *"Raspberry"* ]] && return 0
+  elif grep -qi 'raspberry\|bcm27\|bcm28' /proc/cpuinfo 2>/dev/null; then
+    return 0
+  fi
+  return 1
 }
 
 rs_setup_gamepad() {
@@ -174,6 +187,22 @@ rs_setup_device_groups() {
       fi
     fi
   fi
+  # Match host /dev/snd GID
+  if [[ -e /dev/snd/controlC0 ]]; then
+    local snd_gid
+    snd_gid="$(stat -c '%g' /dev/snd/controlC0 2>/dev/null)" || true
+    if [[ -n "${snd_gid}" && "${snd_gid}" != "0" ]]; then
+      if ! id -G "${user}" 2>/dev/null | grep -qw "${snd_gid}"; then
+        local snd_grp
+        snd_grp="$(getent group "${snd_gid}" 2>/dev/null | cut -d: -f1)" || true
+        if [[ -z "${snd_grp}" ]]; then
+          groupadd -g "${snd_gid}" hostaudio 2>/dev/null || true
+          snd_grp="hostaudio"
+        fi
+        usermod -aG "${snd_grp}" "${user}" 2>/dev/null || true
+      fi
+    fi
+  fi
 }
 
 rs_setup_udev() {
@@ -199,6 +228,49 @@ rs_setup_pulse() {
     export PULSE_SERVER="${PULSE_SERVER:-unix:/run/pulse/native}"
     return
   fi
+
+  local _audio_output="${RETROSTACK_AUDIO_OUTPUT:-auto}"
+
+  # --- Load audio kernel modules ---
+  # RPi 3.5mm analog output needs snd_bcm2835 (not loaded by default with vc4 driver)
+  local _bcm2835_loaded=false
+  if rs_is_rpi; then
+    if modprobe snd_bcm2835 2>/dev/null; then
+      local _bcm_wait
+      for _bcm_wait in $(seq 1 10); do
+        if grep -qi 'bcm2835\|Headphones' /proc/asound/cards 2>/dev/null; then
+          _bcm2835_loaded=true
+          break
+        fi
+        udevadm trigger --action=add --subsystem-match=sound 2>/dev/null || true
+        sleep 0.5
+      done
+    fi
+    if ! ${_bcm2835_loaded}; then
+      rs_log "Warning: RPi 3.5mm analog audio NOT available."
+      rs_log "  The snd_bcm2835 module did not create an ALSA card."
+      rs_log "  To enable 3.5mm audio, set Balena device variable:"
+      rs_log "    BALENA_HOST_CONFIG_dtparam = \"audio=on\""
+      rs_log "  Then reboot the device."
+    fi
+  else
+    modprobe snd_bcm2835 2>/dev/null || true
+  fi
+
+  # Load USB audio kernel module
+  if [[ -d /dev/bus/usb ]]; then
+    modprobe snd-usb-audio 2>/dev/null || true
+    udevadm trigger --action=add --subsystem-match=sound 2>/dev/null || true
+    udevadm settle --timeout=5 2>/dev/null || true
+  fi
+
+  # Log ALSA cards
+  if [[ -r /proc/asound/cards ]]; then
+    local _alsa_cards
+    _alsa_cards="$(grep -E '^\s*[0-9]' /proc/asound/cards | sed 's/.*\]: //' | tr '\n' ', ' | sed 's/, $//')" || true
+    rs_log "ALSA cards: ${_alsa_cards:-none}"
+  fi
+
   # Start our own PulseAudio
   if ! pulseaudio --check 2>/dev/null; then
     pulseaudio --start --exit-idle-time=-1 --daemonize=yes 2>/dev/null || {
@@ -206,19 +278,115 @@ rs_setup_pulse() {
       return
     }
   fi
-  # Wait for a hardware sink (up to 5s)
-  local sink="" i
-  for i in $(seq 1 10); do
-    sink="$(pactl list short sinks 2>/dev/null | grep -i 'alsa_output' | head -1 | awk '{print $2}')" || true
-    [[ -n "${sink}" ]] && break
-    sleep 0.5
+
+  # Fix PulseAudio card profiles for bcm2835
+  if ${_bcm2835_loaded}; then
+    local _bcm_card_index
+    _bcm_card_index="$(pactl list short cards 2>/dev/null \
+      | grep -i 'bcm2835\|Headphones' | head -1 | awk '{print $1}')" || true
+    if [[ -n "${_bcm_card_index}" ]]; then
+      pactl set-card-profile "${_bcm_card_index}" output:analog-stereo 2>/dev/null || \
+        pactl set-card-profile "${_bcm_card_index}" analog-stereo 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+
+  # Wait for USB audio devices to enumerate (up to 15s)
+  if [[ -d /dev/bus/usb ]]; then
+    local _usb_audio_found=false _usb_wait
+    for _usb_wait in $(seq 1 15); do
+      if grep -qi 'usb' /proc/asound/cards 2>/dev/null; then
+        _usb_audio_found=true; break
+      fi
+      local _scard
+      for _scard in /sys/class/sound/card*/device; do
+        [[ -L "${_scard}" ]] || continue
+        if [[ "$(basename "$(readlink -f "${_scard}/subsystem" 2>/dev/null)" 2>/dev/null)" == "usb" ]]; then
+          _usb_audio_found=true; break 2
+        fi
+      done
+      if (( _usb_wait % 5 == 0 )); then
+        udevadm trigger --action=add --subsystem-match=sound 2>/dev/null || true
+        udevadm settle --timeout=3 2>/dev/null || true
+      fi
+      sleep 1
+    done
+    ${_usb_audio_found} && rs_log "USB audio card(s) detected" || \
+      rs_log "Warning: No USB audio cards found"
+  fi
+
+  # Wait for a hardware ALSA sink (up to 20s) with priority selection
+  local _hw_sink="" _wait sink_list
+  for _wait in $(seq 1 20); do
+    sink_list="$(pactl list short sinks 2>/dev/null)" || true
+
+    # Sink selection respects RETROSTACK_AUDIO_OUTPUT preference
+    case "${_audio_output}" in
+      analog)
+        _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output.*\(analog\|stereo-fallback\)' | grep -iv 'hdmi' | head -1 | awk '{print $2}')" || true
+        ;;
+      hdmi)
+        _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output.*hdmi' | head -1 | awk '{print $2}')" || true
+        ;;
+      usb)
+        _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output.*usb' | head -1 | awk '{print $2}')" || true
+        ;;
+      *)
+        # auto: Priority: 1) USB audio  2) 3.5mm analog  3) any ALSA (usually HDMI)
+        _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output.*usb' | head -1 | awk '{print $2}')" || true
+        if [[ -z "${_hw_sink}" ]]; then
+          _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output.*\(analog\|stereo-fallback\)' | grep -iv 'hdmi' | head -1 | awk '{print $2}')" || true
+        fi
+        if [[ -z "${_hw_sink}" ]]; then
+          _hw_sink="$(echo "${sink_list}" | grep -i 'alsa_output' | head -1 | awk '{print $2}')" || true
+        fi
+        ;;
+    esac
+    [[ -n "${_hw_sink}" ]] && break
+    sleep 1
   done
-  if [[ -n "${sink}" ]]; then
-    pactl set-default-sink "${sink}" 2>/dev/null || true
-    pactl set-sink-mute "${sink}" 0 2>/dev/null || true
-    pactl set-sink-volume "${sink}" 100% 2>/dev/null || true
-    rs_log "Audio sink: ${sink}"
+
+  # Allow manual sink override
+  if [[ -n "${RETROSTACK_AUDIO_SINK:-}" ]]; then
+    _hw_sink="${RETROSTACK_AUDIO_SINK}"
+  fi
+
+  if [[ -n "${_hw_sink}" ]]; then
+    pactl set-default-sink "${_hw_sink}" 2>/dev/null || true
+    pactl set-sink-mute "${_hw_sink}" 0 2>/dev/null || true
+    pactl set-sink-volume "${_hw_sink}" 100% 2>/dev/null || true
+    rs_log "Audio sink: ${_hw_sink} (output=${_audio_output})"
   else
     rs_log "Warning: no ALSA audio sink detected"
+    rs_log "  Ensure /dev/snd is passed through and speakers are connected."
+    if rs_is_rpi; then
+      rs_log "  RPi 3.5mm: set BALENA_HOST_CONFIG_dtparam=\"audio=on\" and reboot."
+      rs_log "  RPi HDMI: set BALENA_HOST_CONFIG_hdmi_drive=2 if no sound."
+    fi
+    return
+  fi
+
+  # Unmute ALSA mixer controls for all sound cards
+  if command -v amixer >/dev/null 2>&1 && [[ -r /proc/asound/cards ]]; then
+    local _cnum
+    while read -r _cnum; do
+      [[ "${_cnum}" =~ ^[0-9]+$ ]] || continue
+      amixer -c "${_cnum}" sset 'PCM' 100% unmute 2>/dev/null || true
+      amixer -c "${_cnum}" sset 'Master' 100% unmute 2>/dev/null || true
+    done < <(grep -oP '^\s*\K[0-9]+' /proc/asound/cards 2>/dev/null)
+  fi
+
+  # Audio device wake — send a brief silence burst to force the ALSA device open.
+  # HDMI: triggers ELD/EDID audio handshake.
+  # bcm2835 analog: forces the PWM audio driver to initialize.
+  if [[ -n "${_hw_sink}" && "${_hw_sink}" == alsa_output* ]]; then
+    local _alsa_card
+    _alsa_card="$(echo "${_hw_sink}" | grep -oP 'alsa_output\.\K[0-9]+')" || true
+    if [[ -n "${_alsa_card}" ]] && command -v speaker-test >/dev/null 2>&1; then
+      timeout 2 speaker-test -D "plughw:${_alsa_card},0" -t sine -f 0 -l 1 >/dev/null 2>&1 || true
+    elif [[ -n "${_alsa_card}" ]] && command -v aplay >/dev/null 2>&1; then
+      dd if=/dev/zero bs=1 count=8000 2>/dev/null | \
+        aplay -D "plughw:${_alsa_card},0" -r 8000 -f S16_LE -c 2 -q 2>/dev/null || true
+    fi
   fi
 }
