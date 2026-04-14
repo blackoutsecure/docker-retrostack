@@ -209,11 +209,9 @@ services:
       DISPLAY: ':0'
       PULSE_SERVER: 'unix:/run/pulse/native'
     volumes:
-      - retrostack-emulator-control:/run/retrostack-emulators
-      - retrostack-shared:/run/retrostack-shared:ro
-      - emulationstation-config:/config
-      - emulationstation-roms:/roms:ro
-      - emulationstation-bios:/bios:ro
+      - retrostack-config:/config
+      - retrostack-roms:/roms:ro
+      - retrostack-bios:/bios:ro
       - x11-unix:/tmp/.X11-unix:ro
       - pulse-socket:/run/pulse:ro
     devices:
@@ -227,11 +225,9 @@ services:
     restart: unless-stopped
 
 volumes:
-  emulationstation-config:
-  emulationstation-roms:
-  emulationstation-bios:
-  retrostack-emulator-control:
-  retrostack-shared:
+  retrostack-config:
+  retrostack-roms:
+  retrostack-bios:
   x11-unix:
   pulse-socket:
 ```
@@ -293,9 +289,9 @@ docker run -d \
   -e RETROSTACK_FRONTEND_MODE=daemon \
   -v retrostack-emulator-control:/run/retrostack-emulators \
   -v retrostack-shared:/run/retrostack-shared:ro \
-  -v emulationstation-config:/config \
-  -v emulationstation-roms:/roms:ro \
-  -v emulationstation-bios:/bios:ro \
+  -v retrostack-config:/config \
+  -v retrostack-roms:/roms:ro \
+  -v retrostack-bios:/bios:ro \
   -v x11-unix:/tmp/.X11-unix:ro \
   -v pulse-socket:/run/pulse:ro \
   --device=/dev/dri:/dev/dri \
@@ -468,6 +464,7 @@ If no launch command is received within the idle timeout:
 | `-e EMULATOR_CORE` | Default libretro core for RetroArch | Optional |
 | `-e DISPLAY=:0` | X11 display | Optional |
 | `-e PULSE_SERVER` | PulseAudio server path | Optional |
+| `-e XDG_RUNTIME_DIR` | Runtime directory for display/session (default: `/run/retrostack`) | Optional |
 | `-e RETROSTACK_EMULATORS_CONTROL` | Control pipe directory (client-side) | Optional |
 | `-e RETROSTACK_IDLE_TIMEOUT` | Seconds to wait for a launch command before the container exits (default: `600`, set to `0` to disable) | Optional |
 | `-e RETROSTACK_FRONTEND_MODE` | `standalone` (default) launches the emulator's own GUI; `daemon` listens on FIFO for ES-DE integration | Optional |
@@ -476,13 +473,13 @@ If no launch command is received within the idle timeout:
 
 | Mount | Description | Required |
 | :----: | --- | :---: |
-| `emulationstation-config:/config` | Persistent emulator settings, saves, and states | Recommended |
-| `emulationstation-roms:/roms:ro` | ROM library mount | Recommended |
-| `emulationstation-bios:/bios:ro` | BIOS files for emulators that need them | Optional |
-| `retrostack-emulator-control:/run/retrostack-emulators` | FIFO control pipe volume (shared with ES-DE) | Required (daemon) |
-| `retrostack-shared:/run/retrostack-shared:ro` | Shared runtime — gamepad mappings, Xauthority | Optional |
+| `retrostack-config:/config` | Persistent emulator settings, saves, and states | Recommended |
+| `retrostack-roms:/roms:ro` | ROM library mount | Recommended |
+| `retrostack-bios:/bios:ro` | BIOS files for emulators that need them | Optional |
 | `x11-unix:/tmp/.X11-unix:ro` | X11 socket for display | Required |
 | `pulse-socket:/run/pulse:ro` | PulseAudio socket | Optional |
+| `retrostack-emulator-control:/run/retrostack-emulators` | FIFO control pipe volume (daemon mode / ES-DE only) | Daemon only |
+| `retrostack-shared:/run/retrostack-shared:ro` | Shared runtime — gamepad mappings, Xauthority (ES-DE only) | Daemon only |
 
 ### Devices
 
@@ -510,19 +507,19 @@ The container stores persistent emulator data under `/config/<emulator-name>/`.
 
 - Required: No, but recommended if you want settings and saves to survive restarts
 - Purpose: Stores emulator configuration, save games, save states, and logs
-- Example: Named volume `emulationstation-config:/config`
+- Example: Named volume `retrostack-config:/config`
 
 ### `/roms` - Content Library
 
 - Required: Recommended
 - Purpose: Mount your ROM library read-only into the container
-- Example: Named volume `emulationstation-roms:/roms:ro`
+- Example: Named volume `retrostack-roms:/roms:ro`
 
 ### `/bios` - Emulator Support Files
 
 - Required: Optional
 - Purpose: Supply BIOS files used by emulator backends that need them
-- Example: Named volume `emulationstation-bios:/bios:ro`
+- Example: Named volume `retrostack-bios:/bios:ro`
 
 ### Best Practices
 

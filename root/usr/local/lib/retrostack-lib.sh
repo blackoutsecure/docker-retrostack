@@ -28,6 +28,8 @@ rs_validate_binary() {
 
 rs_setup_display() {
   export DISPLAY="${DISPLAY:-:0}"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/retrostack}"
+  mkdir -p "${XDG_RUNTIME_DIR}"
   if [[ -f "${RETROSTACK_SHARED_DIR}/.Xauthority" ]]; then
     export XAUTHORITY="${RETROSTACK_SHARED_DIR}/.Xauthority"
   fi
