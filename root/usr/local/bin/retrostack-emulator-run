@@ -87,6 +87,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+IDLE_TIMEOUT="${RETROSTACK_IDLE_TIMEOUT:-600}"
+
 if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   CMD_PIPE="${RETROSTACK_CONTROL_DIR}/${EMULATOR_NAME}.cmd"
   STATUS_PIPE="${RETROSTACK_CONTROL_DIR}/${EMULATOR_NAME}.status"
@@ -99,12 +101,26 @@ if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   rs_log "Daemon mode — version: $(rs_emulator_version)"
   [[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Available cores: $(rs_count_cores)"
   rs_log "Control pipe: ${CMD_PIPE}"
+  if [[ "${IDLE_TIMEOUT}" -gt 0 ]]; then
+    rs_log "Idle timeout: ${IDLE_TIMEOUT}s"
+  fi
   rs_log "Ready — waiting for launch commands from frontend (e.g. ES-DE)"
 
-  trap 'rs_log "Shutting down."; rm -f "${CMD_PIPE}" "${STATUS_PIPE}"; exit 0' SIGTERM SIGINT
+  cleanup() { rs_log "Shutting down."; rm -f "${CMD_PIPE}" "${STATUS_PIPE}"; }
+  trap 'cleanup; exit 0' SIGTERM SIGINT
 
   while true; do
-    read -r CMD_LINE < "${CMD_PIPE}" || continue
+    if [[ "${IDLE_TIMEOUT}" -gt 0 ]]; then
+      if ! timeout "${IDLE_TIMEOUT}" bash -c "read -r CMD_LINE < \"${CMD_PIPE}\" && echo \"\${CMD_LINE}\"" > /tmp/rs_cmd 2>/dev/null; then
+        rs_log "Idle timeout (${IDLE_TIMEOUT}s) reached — no launch commands received. Exiting."
+        cleanup
+        exit 0
+      fi
+      CMD_LINE="$(cat /tmp/rs_cmd)"
+      rm -f /tmp/rs_cmd
+    else
+      read -r CMD_LINE < "${CMD_PIPE}" || continue
+    fi
     [[ -z "${CMD_LINE}" ]] && continue
     rs_log "Launch: ${CMD_LINE}"
 
@@ -116,6 +132,10 @@ if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
     run_emulator "${CMD_ARGS[@]}" || EXIT_CODE=$?
     rs_log "Exited: ${EXIT_CODE}"
     echo "${EXIT_CODE}" > "${STATUS_PIPE}"
+
+    rs_log "Emulator process ended — stopping container."
+    cleanup
+    exit "${EXIT_CODE}"
   done
 fi
 

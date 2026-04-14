@@ -34,6 +34,7 @@ services:
     environment:
       DISPLAY: ':0'
       PULSE_SERVER: 'unix:/run/pulse/native'
+      RETROSTACK_IDLE_TIMEOUT: '600'
 
   ppsspp:
     <<: *common
@@ -46,6 +47,7 @@ services:
     environment:
       DISPLAY: ':0'
       PULSE_SERVER: 'unix:/run/pulse/native'
+      RETROSTACK_IDLE_TIMEOUT: '600'
 
   dolphin-emu:
     <<: *common
@@ -58,6 +60,7 @@ services:
     environment:
       DISPLAY: ':0'
       PULSE_SERVER: 'unix:/run/pulse/native'
+      RETROSTACK_IDLE_TIMEOUT: '600'
 
 volumes:
   emulationstation-config:

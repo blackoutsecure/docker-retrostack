@@ -24,6 +24,9 @@ This project packages upstream emulators (RetroArch, PPSSPP, Dolphin) into
 ready-to-run container images for cabinets, desktops, HTPCs, and handheld Linux
 systems. Each image runs standalone or listens for launch commands via FIFO
 control pipes — ideal for integration with frontends like EmulationStation-DE.
+In daemon mode, the container exits automatically after the emulator process
+ends, or after an idle timeout (default 10 minutes, configurable via
+`RETROSTACK_IDLE_TIMEOUT`).
 
 Quick links:
 
@@ -277,7 +280,7 @@ docker run --rm \
   /roms/gc/game.iso
 ```
 
-Daemon mode (container stays alive for ES-DE):
+Daemon mode (container waits for a launch command, then exits after the game ends):
 
 ```bash
 docker run -d \
@@ -285,6 +288,7 @@ docker run -d \
   --restart unless-stopped \
   -e DISPLAY=:0 \
   -e PULSE_SERVER=unix:/run/pulse/native \
+  -e RETROSTACK_IDLE_TIMEOUT=600 \
   -v retrostack-emulator-control:/run/retrostack-emulators \
   -v retrostack-shared:/run/retrostack-shared:ro \
   -v emulationstation-config:/config \
@@ -347,10 +351,10 @@ Both containers share a volume at `/run/retrostack-emulators/`. Each emulator cr
 
 ### How It Works
 
-1. **Startup**: Emulator container creates FIFO pipes at `/run/retrostack-emulators/<name>.cmd` and `.status`
+1. **Startup**: Emulator container creates FIFO pipes at `/run/retrostack-emulators/<name>.cmd` and `.status`, then waits for a launch command (or times out after `RETROSTACK_IDLE_TIMEOUT` seconds)
 2. **Discovery**: ES-DE installs `retrostack-emulator-launch` and symlinks each emulator name to it (e.g. `retroarch → retrostack-emulator-launch`)
 3. **Game launch**: When the user selects a game, ES-DE calls the symlink. `retrostack-emulator-launch` writes the args to the `.cmd` pipe, the emulator container reads it and runs the game on the shared display
-4. **Return**: When the game exits, the emulator container writes the exit code to the `.status` pipe. `retrostack-emulator-launch` reads it and returns, giving control back to ES-DE
+4. **Return**: When the game exits, the emulator container writes the exit code to the `.status` pipe. `retrostack-emulator-launch` reads it and returns, giving control back to ES-DE. The emulator container then stops.
 
 ### Combined docker-compose.yml
 
@@ -427,10 +431,25 @@ ln -sf /usr/local/bin/retrostack-emulator-launch /usr/local/bin/dolphin-emu
 ### Startup Log Output
 
 ```
-[retrostack:retroarch] Daemon mode — listening for launch commands
-[retrostack:retroarch] Version: RetroArch 1.22.2 (Git ...)
+[retrostack:retroarch] Daemon mode — version: RetroArch 1.22.2 (Git ...)
 [retrostack:retroarch] Available cores: 6
-[retrostack:retroarch] Control: /run/retrostack-emulators/retroarch.cmd
+[retrostack:retroarch] Control pipe: /run/retrostack-emulators/retroarch.cmd
+[retrostack:retroarch] Idle timeout: 600s
+[retrostack:retroarch] Ready — waiting for launch commands from frontend (e.g. ES-DE)
+```
+
+After a game finishes:
+
+```
+[retrostack:retroarch] Launch: --core gambatte /roms/gb/game.gb
+[retrostack:retroarch] Exited: 0
+[retrostack:retroarch] Emulator process ended — stopping container.
+```
+
+If no launch command is received within the idle timeout:
+
+```
+[retrostack:retroarch] Idle timeout (600s) reached — no launch commands received. Exiting.
 ```
 
 ---
@@ -447,6 +466,7 @@ ln -sf /usr/local/bin/retrostack-emulator-launch /usr/local/bin/dolphin-emu
 | `-e DISPLAY=:0` | X11 display | Optional |
 | `-e PULSE_SERVER` | PulseAudio server path | Optional |
 | `-e RETROSTACK_EMULATORS_CONTROL` | Control pipe directory (client-side) | Optional |
+| `-e RETROSTACK_IDLE_TIMEOUT` | Seconds to wait for a launch command before the container exits (default: `600`, set to `0` to disable) | Optional |
 
 ### Storage Mounts
 

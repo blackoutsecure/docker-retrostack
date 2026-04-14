@@ -30,10 +30,13 @@ opt_param_usage_include_env: true
 opt_param_env_vars:
   - {env_var: "EMULATOR_CORE", env_value: "", desc: "Default libretro core for RetroArch"}
   - {env_var: "RETROSTACK_EMULATORS_CONTROL", env_value: "/run/retrostack-emulators", desc: "Control pipe directory"}
+  - {env_var: "RETROSTACK_IDLE_TIMEOUT", env_value: "600", desc: "Seconds to wait for a launch command before exiting (default: 600, 0 = disabled)"}
 
 app_setup_block_enabled: true
 app_setup_block: |
-  Daemon mode (default): starts FIFO control pipes and listens for launch commands.
+  Daemon mode (default): starts FIFO control pipes and waits for a launch command.
+  The container exits automatically after the emulator process ends, or after an idle
+  timeout (default 600s / 10 min, configurable via `RETROSTACK_IDLE_TIMEOUT`; set to `0` to disable).
   Standalone mode: pass emulator args and a ROM path; container exits when done.
   Config persistence: `/config/<emulator-name>/`. Device passthrough: `/dev/dri`, `/dev/input`, `/dev/snd`.
 
