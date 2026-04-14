@@ -15,7 +15,17 @@ FROM ${BASE_IMAGE} AS runtime-base
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl -fsSL -o /usr/local/share/gamecontrollerdb.txt \
       https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/master/gamecontrollerdb.txt
+RUN mkdir -p /defaults/roms/gb \
+  && curl -fsSL -o "/defaults/roms/gb/Libbet and the Magic Floor.gb" \
+       https://github.com/pinobatch/libbet/releases/download/v0.08/libbet.gb
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       xserver-xorg-core xserver-xorg-input-libinput \
+       xserver-xorg-video-dummy xinit x11-xserver-utils \
+       pulseaudio udev \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY root/ /tmp/retrostack-root/
+COPY VERSION /etc/retrostack-version
 RUN set -eux \
   && cp /tmp/retrostack-root/usr/local/lib/retrostack-lib.sh /usr/local/lib/retrostack-lib.sh \
   && cp /tmp/retrostack-root/usr/local/bin/retrostack-emulator-run /usr/local/bin/retrostack-emulator-run \

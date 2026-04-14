@@ -22,12 +22,10 @@ Sponsored and maintained by [Blackout Secure](https://blackoutsecure.app/).
 
 This project packages upstream emulators (RetroArch, PPSSPP, Dolphin) into
 ready-to-run container images for cabinets, desktops, HTPCs, and handheld Linux
-systems. Each image launches the emulator's own GUI by default (standalone mode)
-or listens for launch commands via FIFO control pipes when set to daemon mode —
-ideal for integration with frontends like EmulationStation-DE.
-In daemon mode, the container exits automatically after the emulator process
-ends, or after an idle timeout (default 10 minutes, configurable via
-`RETROSTACK_IDLE_TIMEOUT`).
+systems. Each image starts its own internal Xorg server and launches the
+emulator GUI by default (standalone mode) or listens for launch commands via
+FIFO control pipes when set to daemon mode — ideal for integration with
+frontends like EmulationStation-DE. No host X server is required.
 
 Quick links:
 
@@ -212,12 +210,12 @@ services:
       - retrostack-config:/config
       - retrostack-roms:/roms:ro
       - retrostack-bios:/bios:ro
-      - x11-unix:/tmp/.X11-unix:ro
       - pulse-socket:/run/pulse:ro
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
       - /dev/snd:/dev/snd
+    privileged: true
     tmpfs:
       - /var/tmp
       - /run:exec
@@ -228,7 +226,6 @@ volumes:
   retrostack-config:
   retrostack-roms:
   retrostack-bios:
-  x11-unix:
   pulse-socket:
 ```
 
@@ -468,6 +465,7 @@ If no launch command is received within the idle timeout:
 | `-e RETROSTACK_EMULATORS_CONTROL` | Control pipe directory (client-side) | Optional |
 | `-e RETROSTACK_IDLE_TIMEOUT` | Seconds to wait for a launch command before the container exits (default: `600`, set to `0` to disable) | Optional |
 | `-e RETROSTACK_FRONTEND_MODE` | `standalone` (default) launches the emulator's own GUI; `daemon` listens on FIFO for ES-DE integration | Optional |
+| `-e RETROSTACK_USE_INTERNAL_X` | Start an internal Xorg server in standalone mode (default: `1`). Set to `0` to use an external X socket | Optional |
 
 ### Storage Mounts
 
@@ -476,8 +474,8 @@ If no launch command is received within the idle timeout:
 | `retrostack-config:/config` | Persistent emulator settings, saves, and states | Recommended |
 | `retrostack-roms:/roms:ro` | ROM library mount | Recommended |
 | `retrostack-bios:/bios:ro` | BIOS files for emulators that need them | Optional |
-| `x11-unix:/tmp/.X11-unix:ro` | X11 socket for display | Required |
 | `pulse-socket:/run/pulse:ro` | PulseAudio socket | Optional |
+| `/tmp/.X11-unix:/tmp/.X11-unix:ro` | X11 socket (only when `RETROSTACK_USE_INTERNAL_X=0`) | Conditional |
 | `retrostack-emulator-control:/run/retrostack-emulators` | FIFO control pipe volume (daemon mode / ES-DE only) | Daemon only |
 | `retrostack-shared:/run/retrostack-shared:ro` | Shared runtime — gamepad mappings, Xauthority (ES-DE only) | Daemon only |
 

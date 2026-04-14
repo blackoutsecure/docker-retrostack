@@ -13,15 +13,16 @@ x-common: &common
     XDG_RUNTIME_DIR: '/run/retrostack'
     RETROSTACK_IDLE_TIMEOUT: '600'
     RETROSTACK_FRONTEND_MODE: 'standalone'
+    RETROSTACK_USE_INTERNAL_X: '1'
   labels:
     io.balena.features.kernel-modules: '1'
     io.balena.features.firmware: '1'
     io.balena.features.dbus: '1'
+  privileged: true
   volumes:
     - retrostack-config:/config
     - retrostack-roms:/roms:ro
     - retrostack-bios:/bios:ro
-    - x11-unix:/tmp/.X11-unix:ro
     - pulse-socket:/run/pulse:ro
   devices:
     - /dev/dri:/dev/dri
@@ -60,5 +61,4 @@ volumes:
   retrostack-config:
   retrostack-roms:
   retrostack-bios:
-  x11-unix:
   pulse-socket:

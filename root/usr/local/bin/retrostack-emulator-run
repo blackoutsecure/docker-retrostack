@@ -97,14 +97,101 @@ done
 
 IDLE_TIMEOUT="${RETROSTACK_IDLE_TIMEOUT:-600}"
 FRONTEND_MODE="${RETROSTACK_FRONTEND_MODE:-standalone}"
+USE_INTERNAL_X="${RETROSTACK_USE_INTERNAL_X:-1}"
+
+rs_log "──────────────────────────────────────"
+rs_log "RetroStack $(rs_retrostack_version)"
+rs_log "Emulator:      ${EMULATOR_NAME}"
+rs_log "Binary:        ${EMULATOR_BINARY}"
+rs_log "Version:       $(rs_emulator_version)"
+[[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Cores:         $(rs_count_cores)"
+rs_log "Mode:          ${FRONTEND_MODE}"
+if [[ "${FRONTEND_MODE}" == "standalone" ]]; then
+  rs_log "Internal X:    ${USE_INTERNAL_X}"
+fi
+rs_log "DISPLAY:       ${DISPLAY:-unset}"
+rs_log "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-unset}"
+rs_log "PULSE_SERVER:  ${PULSE_SERVER:-unset}"
+rs_log "Config:        ${EMU_CONFIG_HOME}"
+X11_DISPLAY_NUM="${DISPLAY#:}"
+X11_SOCKET="/tmp/.X11-unix/X${X11_DISPLAY_NUM%%.*}"
+if [[ -S "${X11_SOCKET}" ]]; then
+  rs_log "X11 socket:    ${X11_SOCKET} (ok)"
+else
+  rs_log "X11 socket:    ${X11_SOCKET} (NOT FOUND)"
+fi
+[[ -d /dev/dri ]] && rs_log "GPU:           /dev/dri (ok)" || rs_log "GPU:           /dev/dri (NOT FOUND)"
+rs_log "──────────────────────────────────────"
 
 if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
-  rs_log "Standalone frontend mode — launching ${EMULATOR_NAME}"
-  case "${EMULATOR_NAME}" in
-    retroarch)    exec "${EMULATOR_BINARY}" ;;
-    dolphin-emu)  exec "${EMULATOR_BINARY}" ;;
-    *)            exec "${EMULATOR_BINARY}" ;;
-  esac
+  rs_setup_device_groups
+  rs_setup_udev
+
+  # Seed bundled demo ROMs on first boot if /roms is empty
+  if [[ -d /defaults/roms ]]; then
+    rom_count="$(find /roms -mindepth 1 -maxdepth 2 -type f 2>/dev/null | wc -l)"
+    if [[ "${rom_count}" -eq 0 ]]; then
+      cp -rn /defaults/roms/* /roms/ 2>/dev/null || true
+      rs_log "Seeded demo ROMs into /roms"
+    fi
+  fi
+
+  STARTED_INTERNAL_X=false
+
+  if [[ ! -S "${X11_SOCKET}" ]]; then
+    if [[ "${USE_INTERNAL_X}" == "1" ]]; then
+      if rs_start_internal_x; then
+        STARTED_INTERNAL_X=true
+      else
+        rs_log "Internal Xorg failed. Check GPU passthrough (/dev/dri)."
+        rs_log "  Or bind-mount a host X11 socket: -v /tmp/.X11-unix:/tmp/.X11-unix:ro"
+        sleep infinity &
+        wait
+      fi
+    else
+      rs_log "ERROR: No X11 socket at ${X11_SOCKET} and internal X is disabled"
+      rs_log "  Set RETROSTACK_USE_INTERNAL_X=1 or bind-mount /tmp/.X11-unix"
+      sleep infinity &
+      wait
+    fi
+  fi
+
+  rs_setup_pulse
+
+  rs_log "Launching ${EMULATOR_NAME} in standalone mode"
+
+  FAIL_STAMP="/tmp/retrostack-standalone-fail"
+  FAIL_COUNT=0
+  if [[ -f "${FAIL_STAMP}" ]]; then
+    FAIL_COUNT=$(cat "${FAIL_STAMP}")
+  fi
+
+  if [[ ${FAIL_COUNT} -ge 3 ]]; then
+    rs_log "ERROR: ${EMULATOR_NAME} failed ${FAIL_COUNT} consecutive times — stopping."
+    rs_log "Last attempt diagnostics:"
+    rs_log "  DISPLAY=${DISPLAY:-unset}"
+    rs_log "  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}"
+    [[ -S /tmp/.X11-unix/X${DISPLAY#:} ]] && rs_log "  X11 socket: found" || rs_log "  X11 socket: NOT FOUND — is an X server running?"
+    [[ -d /dev/dri ]] && rs_log "  /dev/dri: found" || rs_log "  /dev/dri: NOT FOUND — GPU passthrough missing?"
+    rs_log "Check: X server running? DISPLAY correct? /dev/dri mounted?"
+    rm -f "${FAIL_STAMP}"
+    sleep infinity &
+    wait
+  fi
+
+  echo $(( FAIL_COUNT + 1 )) > "${FAIL_STAMP}"
+
+  EXIT_CODE=0
+  "${EMULATOR_BINARY}" || EXIT_CODE=$?
+
+  if [[ ${EXIT_CODE} -eq 0 ]]; then
+    rm -f "${FAIL_STAMP}"
+    rs_log "${EMULATOR_NAME} exited cleanly."
+  else
+    rs_log "${EMULATOR_NAME} exited with code ${EXIT_CODE}"
+  fi
+  ${STARTED_INTERNAL_X} && rs_stop_internal_x
+  exit "${EXIT_CODE}"
 fi
 
 if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
@@ -116,8 +203,7 @@ if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   mkfifo "${CMD_PIPE}" "${STATUS_PIPE}"
   chmod 666 "${CMD_PIPE}" "${STATUS_PIPE}"
 
-  rs_log "Daemon mode — version: $(rs_emulator_version)"
-  [[ "${EMULATOR_NAME}" == "retroarch" ]] && rs_log "Available cores: $(rs_count_cores)"
+  rs_log "Daemon mode"
   rs_log "Control pipe: ${CMD_PIPE}"
   if [[ "${IDLE_TIMEOUT}" -gt 0 ]]; then
     rs_log "Idle timeout: ${IDLE_TIMEOUT}s"

@@ -17,7 +17,6 @@ param_volumes:
   - {vol_path: "/config", vol_host_path: "retrostack-config", desc: "Persistent emulator settings, saves, and states"}
   - {vol_path: "/roms", vol_host_path: "retrostack-roms", desc: "ROM library mount"}
   - {vol_path: "/bios", vol_host_path: "retrostack-bios", desc: "BIOS files for emulator backends"}
-  - {vol_path: "/tmp/.X11-unix", vol_host_path: "x11-unix", desc: "X11 socket for display"}
   - {vol_path: "/run/pulse", vol_host_path: "pulse-socket", desc: "PulseAudio socket"}
 param_usage_include_net: false
 param_usage_include_env: true
@@ -31,10 +30,13 @@ opt_param_env_vars:
   - {env_var: "RETROSTACK_EMULATORS_CONTROL", env_value: "/run/retrostack-emulators", desc: "Control pipe directory"}
   - {env_var: "RETROSTACK_IDLE_TIMEOUT", env_value: "600", desc: "Seconds to wait for a launch command before exiting (default: 600, 0 = disabled)"}
   - {env_var: "RETROSTACK_FRONTEND_MODE", env_value: "standalone", desc: "standalone (default) launches the emulator GUI; daemon listens on FIFO for ES-DE integration"}
+  - {env_var: "RETROSTACK_USE_INTERNAL_X", env_value: "1", desc: "Start an internal Xorg server in standalone mode (1=auto, 0=disabled — use external X socket)"}
 
 app_setup_block_enabled: true
 app_setup_block: |
-  Standalone mode (default): launches the emulator's own GUI directly.
+  Standalone mode (default): starts an internal Xorg server and launches the emulator GUI directly.
+  No host X server is required — the container handles display setup internally.
+  Set `RETROSTACK_USE_INTERNAL_X=0` to use an external X socket instead (mount `/tmp/.X11-unix`).
   Set `RETROSTACK_FRONTEND_MODE=daemon` for ES-DE integration (FIFO control pipe mode).
   In daemon mode, the container exits automatically after the emulator process ends, or after an idle
   timeout (default 600s / 10 min, configurable via `RETROSTACK_IDLE_TIMEOUT`; set to `0` to disable).
