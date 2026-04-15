@@ -5,7 +5,7 @@ ARG BASE_IMAGE_NAME=linuxserver/baseimage-ubuntu
 ARG BASE_IMAGE_VARIANT=noble
 ARG BASE_IMAGE=${BASE_IMAGE_REGISTRY}/${BASE_IMAGE_NAME}:${BASE_IMAGE_VARIANT}
 ARG RETROSTACK_VERSION=1.0.0
-ARG RETROARCH_VERSION=1.22.0
+ARG RETROARCH_VERSION=1.22.2
 ARG PPSSPP_VERSION=v1.20.3
 ARG DOLPHIN_VERSION=2509
 ARG VCS_URL=https://github.com/blackoutsecure/docker-retrostack
@@ -105,7 +105,8 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/retroarch.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
-       retroarch libretro-core-info \
+       retroarch libretro-core-info retroarch-joypad-autoconfig \
+       libgamemode0 \
        libretro-gambatte libretro-mgba libretro-snes9x \
        libretro-nestopia libretro-genesisplusgx libretro-beetle-pce-fast \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
