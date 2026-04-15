@@ -17,18 +17,43 @@ mkdir -p "${EMU_CONFIG_HOME}"
 
 setup_retroarch_config() {
   export XDG_CONFIG_HOME="${EMU_CONFIG_HOME}"
-  mkdir -p "${EMU_CONFIG_HOME}/retroarch"/{saves,states,logs,system}
+  mkdir -p "${EMU_CONFIG_HOME}/retroarch"/{saves,states,logs,system,cores}
   if [[ -d /bios && ! -e "${EMU_CONFIG_HOME}/retroarch/system/bios" ]]; then
     ln -sf /bios "${EMU_CONFIG_HOME}/retroarch/system/bios"
   fi
+
+  # Symlink pre-installed cores into the writable cores directory
+  local sys_core_dir
+  sys_core_dir="$(rs_find_libretro_dir)"
+  if [[ -n "${sys_core_dir}" ]]; then
+    for so in "${sys_core_dir}"/*.so; do
+      [[ -f "$so" ]] || continue
+      local dest="${EMU_CONFIG_HOME}/retroarch/cores/${so##*/}"
+      [[ -e "$dest" ]] || ln -sf "$so" "$dest"
+    done
+  fi
+
   if [[ -f "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" ]]; then
     return
   fi
   rs_log "Writing default retroarch.cfg"
-  local core_dir
-  core_dir="$(rs_find_libretro_dir)"
+
+  # Detect architecture for the core updater buildbot URL
+  local arch buildbot_url=""
+  arch="$(uname -m)"
+  case "${arch}" in
+    x86_64)  buildbot_url="https://buildbot.libretro.com/nightly/linux/x86_64/latest/" ;;
+    i686)    buildbot_url="https://buildbot.libretro.com/nightly/linux/x86/latest/" ;;
+    aarch64) buildbot_url="https://buildbot.libretro.com/nightly/linux/aarch64/latest/" ;;
+    armv7*)  buildbot_url="https://buildbot.libretro.com/nightly/linux/armhf/latest/" ;;
+  esac
+
+  local cores_dir="${EMU_CONFIG_HOME}/retroarch/cores"
   cat > "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" <<-CFG
-	libretro_directory = "${core_dir}"
+	libretro_directory = "${cores_dir}"
+	libretro_info_path = "/usr/share/libretro/info"
+	core_updater_buildbot_cores_url = "${buildbot_url}"
+	core_updater_auto_extract_archive = "true"
 	joypad_autoconfig_dir = "/usr/share/libretro/autoconfig"
 	video_driver = "gl"
 	audio_driver = "pulse"

@@ -74,7 +74,7 @@ rs_resolve_core() {
   local core="$1"
   [[ "${core}" == /* ]] && echo "${core}" && return
   local d
-  for d in /usr/lib/libretro /usr/lib/*/libretro; do
+  for d in /config/retroarch/retroarch/cores /usr/lib/libretro /usr/lib/*/libretro; do
     [[ -d "$d" ]] || continue
     [[ -f "$d/${core}_libretro.so" ]] && echo "$d/${core}_libretro.so" && return
     [[ -f "$d/${core}.so" ]] && echo "$d/${core}.so" && return
@@ -84,7 +84,7 @@ rs_resolve_core() {
 
 rs_count_cores() {
   local count=0 d f
-  for d in /usr/lib/libretro /usr/lib/*/libretro; do
+  for d in /config/retroarch/retroarch/cores /usr/lib/libretro /usr/lib/*/libretro; do
     [[ -d "$d" ]] || continue
     for f in "$d"/*.so; do
       [[ -f "$f" ]] && count=$((count + 1))
