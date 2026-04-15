@@ -279,16 +279,43 @@ rs_setup_pulse() {
     }
   fi
 
-  # Point PULSE_SERVER to our own PulseAudio socket.
+  # Locate the PulseAudio socket.
   # docker-compose sets PULSE_SERVER=unix:/run/pulse/native for daemon mode
-  # (ES-DE provides the socket), but in standalone mode the volume is empty.
-  # PulseAudio creates its socket at $XDG_RUNTIME_DIR/pulse/native, so we
-  # must update PULSE_SERVER or pactl/RetroArch will fail to connect.
-  local _pa_socket="${XDG_RUNTIME_DIR}/pulse/native"
-  if [[ -S "${_pa_socket}" ]]; then
+  # (ES-DE provides the socket), but in standalone mode the volume is empty
+  # and PA creates its socket elsewhere depending on the user context.
+  # Search common locations to find where PA is actually listening.
+  local _pa_socket=""
+  local _search_paths=(
+    "${XDG_RUNTIME_DIR}/pulse/native"
+    "/run/pulse/native"
+    "/run/user/0/pulse/native"
+    "/run/user/$(id -u)/pulse/native"
+    "${HOME}/.config/pulse/native"
+  )
+  local _sp
+  for _sp in "${_search_paths[@]}"; do
+    if [[ -S "${_sp}" ]]; then
+      _pa_socket="${_sp}"
+      break
+    fi
+  done
+
+  # If not found in known paths, ask PulseAudio directly
+  if [[ -z "${_pa_socket}" ]]; then
+    local _pa_info
+    _pa_info="$(PULSE_SERVER= pactl info 2>/dev/null | grep -oP 'Server String: \K.*')" || true
+    if [[ "${_pa_info}" == /* && -S "${_pa_info}" ]]; then
+      _pa_socket="${_pa_info}"
+    elif [[ "${_pa_info}" == unix:* ]]; then
+      local _pa_path="${_pa_info#unix:}"
+      [[ -S "${_pa_path}" ]] && _pa_socket="${_pa_path}"
+    fi
+  fi
+
+  if [[ -n "${_pa_socket}" ]]; then
     export PULSE_SERVER="unix:${_pa_socket}"
   else
-    # Fallback: let libpulse auto-discover the socket
+    # Last resort: let libpulse auto-discover
     unset PULSE_SERVER 2>/dev/null || true
   fi
   rs_log "PulseAudio running (PULSE_SERVER=${PULSE_SERVER:-<auto>})"
@@ -329,6 +356,39 @@ rs_setup_pulse() {
       rs_log "USB audio card(s) detected"
     elif [[ "${_audio_output}" == "usb" ]]; then
       rs_log "Warning: RETROSTACK_AUDIO_OUTPUT=usb but no USB audio cards found"
+    fi
+  fi
+
+  # Ensure PulseAudio detection modules are loaded.
+  # In containers, module-udev-detect may not auto-load or may fail silently.
+  # Retry loading it, then fall back to module-alsa-detect, and finally
+  # try creating sinks manually from /proc/asound/cards.
+  local _initial_sinks
+  _initial_sinks="$(pactl list short sinks 2>/dev/null)" || true
+  if [[ -z "${_initial_sinks}" ]]; then
+    # Re-trigger udev sound subsystem so PA's module-udev-detect picks up cards
+    udevadm trigger --action=change --subsystem-match=sound 2>/dev/null || true
+    udevadm settle --timeout=5 2>/dev/null || true
+    sleep 2
+
+    _initial_sinks="$(pactl list short sinks 2>/dev/null)" || true
+    if [[ -z "${_initial_sinks}" ]]; then
+      # Try loading detection modules explicitly
+      pactl load-module module-udev-detect 2>/dev/null || true
+      pactl load-module module-alsa-detect 2>/dev/null || true
+      sleep 2
+
+      _initial_sinks="$(pactl list short sinks 2>/dev/null)" || true
+      if [[ -z "${_initial_sinks}" ]] && [[ -r /proc/asound/cards ]]; then
+        # Last resort: manually create ALSA sinks for each card
+        rs_log "Auto-detect found no sinks — creating ALSA sinks manually"
+        local _cnum
+        while read -r _cnum; do
+          [[ "${_cnum}" =~ ^[0-9]+$ ]] || continue
+          pactl load-module module-alsa-sink "device=hw:${_cnum}" 2>/dev/null || true
+        done < <(grep -oP '^\s*\K[0-9]+' /proc/asound/cards 2>/dev/null)
+        sleep 1
+      fi
     fi
   fi
 

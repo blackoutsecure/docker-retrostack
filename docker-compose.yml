@@ -9,7 +9,6 @@ x-common: &common
   read_only: false
   environment: &common-env
     DISPLAY: ':0'
-    PULSE_SERVER: 'unix:/run/pulse/native'
     XDG_RUNTIME_DIR: '/run/retrostack'
     RETROSTACK_IDLE_TIMEOUT: '600'
     RETROSTACK_FRONTEND_MODE: 'standalone'
@@ -63,4 +62,3 @@ volumes:
   retrostack-config:
   retrostack-roms:
   retrostack-bios:
-  pulse-socket:
