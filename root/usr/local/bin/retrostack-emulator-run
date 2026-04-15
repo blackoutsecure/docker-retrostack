@@ -145,7 +145,7 @@ if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
     if [[ "${rom_count}" -eq 0 ]]; then
       rs_log "No ROMs found in /roms — seeding bundled demos from /defaults/roms"
       rs_log "Source files in /defaults/roms:"
-      find /defaults/roms -type f -printf '  %p (%s bytes)\n' 2>/dev/null || true
+      find /defaults/roms -type f -printf '%p (%s bytes)\n' 2>/dev/null | while IFS= read -r f; do rs_log "  ${f}"; done || true
       if cp -rv --update=none /defaults/roms/* /roms/ 2>&1 | while IFS= read -r line; do rs_log "  cp: ${line}"; done; then
         rs_log "Seeded demo ROMs into /roms"
       else
@@ -159,11 +159,10 @@ if [[ "${FRONTEND_MODE}" == "standalone" && ${#EXTRA_ARGS[@]} -eq 0 ]]; then
   fi
 
   # Verify /roms contents
-  local verified_count
   verified_count="$(find /roms -mindepth 1 -maxdepth 3 -type f 2>/dev/null | wc -l)"
   if [[ "${verified_count}" -gt 0 ]]; then
     rs_log "ROMs in /roms (${verified_count} files):"
-    find /roms -mindepth 1 -maxdepth 3 -type f -printf '  %p (%s bytes)\n' 2>/dev/null || true
+    find /roms -mindepth 1 -maxdepth 3 -type f -printf '%p (%s bytes)\n' 2>/dev/null | while IFS= read -r f; do rs_log "  ${f}"; done || true
   else
     rs_log "WARNING: /roms is empty — no ROMs available. Mount a volume with ROM files to /roms."
   fi
