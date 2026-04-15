@@ -24,7 +24,6 @@ x-common: &common
     - retrostack-config:/config
     - retrostack-roms:/roms
     - retrostack-bios:/bios:ro
-    - pulse-socket:/run/pulse:ro
   devices:
     - /dev/dri:/dev/dri
     - /dev/input:/dev/input
