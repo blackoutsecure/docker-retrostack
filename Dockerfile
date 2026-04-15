@@ -105,11 +105,17 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/retroarch.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
-       retroarch libretro-core-info retroarch-joypad-autoconfig \
+       retroarch libretro-core-info \
        libgamemode0 \
        libretro-gambatte libretro-mgba libretro-snes9x \
        libretro-nestopia libretro-genesisplusgx libretro-beetle-pce-fast \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Joypad autoconfig profiles (not packaged in the PPA)
+RUN AUTOCONFIG_DIR="$(find /usr -path '*/retroarch/autoconfig' -type d 2>/dev/null | head -1)" \
+  && if [ -z "${AUTOCONFIG_DIR}" ]; then AUTOCONFIG_DIR="/etc/retroarch/autoconfig"; fi \
+  && mkdir -p "${AUTOCONFIG_DIR}" \
+  && curl -fsSL https://github.com/libretro/retroarch-joypad-autoconfig/archive/refs/heads/master.tar.gz \
+     | tar -xz --strip-components=1 -C "${AUTOCONFIG_DIR}"
 LABEL org.opencontainers.image.title="retrostack:retroarch" \
       org.opencontainers.image.description="RetroArch + libretro cores runtime for RetroStack" \
       org.opencontainers.image.url="${VCS_URL}" \
