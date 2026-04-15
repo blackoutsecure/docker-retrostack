@@ -29,6 +29,7 @@ setup_retroarch_config() {
   core_dir="$(rs_find_libretro_dir)"
   cat > "${EMU_CONFIG_HOME}/retroarch/retroarch.cfg" <<-CFG
 	libretro_directory = "${core_dir}"
+	joypad_autoconfig_dir = "/usr/share/libretro/autoconfig"
 	video_driver = "gl"
 	audio_driver = "pulse"
 	input_driver = "udev"
